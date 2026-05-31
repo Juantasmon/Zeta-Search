@@ -25,6 +25,99 @@ MAX_SIZE = 5 * 1024 * 1024
 CHUNK_SIZE = 200  # archivos por bloque enviado al pool
 N_WORKERS = max(2, multiprocessing.cpu_count())
 
+TRANSLATIONS = {
+    'es': {
+        'title': 'Zeta',
+        'lbl_base': 'Carpeta Base:',
+        'lbl_search': 'Buscar texto:',
+        'btn_browse': 'Examinar…',
+        'btn_search': 'Buscar',
+        'btn_cancel': 'Cancelar',
+        'btn_canceling': 'Cancelando…',
+        'lbl_options': 'Opciones',
+        'opt_type_name': 'Archivo / Carpeta',
+        'opt_type_content': 'Solo Contenido',
+        'chk_exact': 'Nombre Exacto',
+        'chk_whole': 'Palabra Completa',
+        'opt_mode_all': 'Todas',
+        'opt_mode_any': 'Alguna',
+        'lbl_preview': 'Vista Previa',
+        'btn_prev': '< Anterior',
+        'btn_next': 'Siguiente >',
+        'col_name': 'Nombre',
+        'col_path': 'Ruta',
+        'col_type': 'Tipo',
+        'type_folder': 'Carpeta',
+        'type_file': 'Archivo',
+        'status_ready': 'Listo.',
+        'status_searching': 'Buscando…',
+        'status_canceled': 'Búsqueda cancelada.',
+        'status_no_results': 'No se encontraron coincidencias.',
+        'status_results': '✅ {count} resultado(s) en {time:.1f}s',
+        'stats_done': 'Total detectados: {total}  │  Leídos: {scanned}  │  Hallados: {matches}  │  Tiempo: {time:.1f}s',
+        'stats_running': '⏱ {elapsed:.0f}s  │  Leídos: {scanned} {total_str}  │  Hallados: {matches}',
+        'stats_detecting': '{total} detectados…',
+        'msg_valid_folder': 'Selecciona una carpeta válida.',
+        'msg_valid_query': 'Ingresa texto a buscar.',
+        'menu_open': 'Abrir',
+        'menu_open_loc': 'Abrir ubicación',
+        'menu_copy_path': 'Copiar ruta',
+        'status_copied': 'Copiado: {path}',
+        'preview_loading': 'Cargando…',
+        'preview_folder': '📁 {name}  ({count} elementos)\n\n',
+        'preview_more': '\n  … y {count} más.',
+        'preview_binary': 'Archivo binario: {name}',
+        'preview_truncated': '\n\n… (truncado) …',
+        'preview_error': 'Error: {error}',
+        'tree_no_results': '❌ Sin resultados'
+    },
+    'en': {
+        'title': 'Zeta',
+        'lbl_base': 'Base Folder:',
+        'lbl_search': 'Search text:',
+        'btn_browse': 'Browse…',
+        'btn_search': 'Search',
+        'btn_cancel': 'Cancel',
+        'btn_canceling': 'Canceling…',
+        'lbl_options': 'Options',
+        'opt_type_name': 'File / Folder',
+        'opt_type_content': 'Content Only',
+        'chk_exact': 'Exact Name',
+        'chk_whole': 'Whole Word',
+        'opt_mode_all': 'All',
+        'opt_mode_any': 'Any',
+        'lbl_preview': 'Preview',
+        'btn_prev': '< Previous',
+        'btn_next': 'Next >',
+        'col_name': 'Name',
+        'col_path': 'Path',
+        'col_type': 'Type',
+        'type_folder': 'Folder',
+        'type_file': 'File',
+        'status_ready': 'Ready.',
+        'status_searching': 'Searching…',
+        'status_canceled': 'Search canceled.',
+        'status_no_results': 'No matches found.',
+        'status_results': '✅ {count} match(es) in {time:.1f}s',
+        'stats_done': 'Total detected: {total}  │  Read: {scanned}  │  Found: {matches}  │  Time: {time:.1f}s',
+        'stats_running': '⏱ {elapsed:.0f}s  │  Read: {scanned} {total_str}  │  Found: {matches}',
+        'stats_detecting': '{total} detected…',
+        'msg_valid_folder': 'Select a valid folder.',
+        'msg_valid_query': 'Enter text to search.',
+        'menu_open': 'Open',
+        'menu_open_loc': 'Open location',
+        'menu_copy_path': 'Copy path',
+        'status_copied': 'Copied: {path}',
+        'preview_loading': 'Loading…',
+        'preview_folder': '📁 {name}  ({count} items)\n\n',
+        'preview_more': '\n  … and {count} more.',
+        'preview_binary': 'Binary file: {name}',
+        'preview_truncated': '\n\n… (truncated) …',
+        'preview_error': 'Error: {error}',
+        'tree_no_results': '❌ No results'
+    }
+}
+
 # ── helpers ──────────────────────────────────────────────────────────────────
 def _normalize(text: str) -> str:
     return unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode().lower()
@@ -215,25 +308,30 @@ class ZetaApp:
         self.cur_match = 0
         self.matches_shown = 0
 
+        self.language = "es"
+        self.theme = "light"
+
         self._build_ui()
         self.root.after(80, self._poll_queue)
 
     # ── UI ────────────────────────────────────────────────────────────────────
     def _build_ui(self):
-        s = ttk.Style()
-        s.configure("Status.TLabel", font=("Segoe UI", 10, "bold"))
-        s.configure("Stats.TLabel", font=("Segoe UI", 9), foreground="#333")
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
 
         top = ttk.Frame(self.root, padding=10)
         top.pack(fill=tk.X)
 
-        ttk.Label(top, text="Carpeta Base:", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky=tk.W)
+        self.lbl_base_folder = ttk.Label(top, text="Carpeta Base:", font=("Segoe UI", 10, "bold"))
+        self.lbl_base_folder.grid(row=0, column=0, sticky=tk.W)
         self.var_path = tk.StringVar()
         ttk.Entry(top, textvariable=self.var_path, font=("Segoe UI", 10)).grid(row=0, column=1, sticky=tk.EW, padx=8)
-        ttk.Button(top, text="Examinar…", command=self._browse).grid(row=0, column=2)
+        self.btn_browse = ttk.Button(top, text="Examinar…", command=self._browse)
+        self.btn_browse.grid(row=0, column=2)
         top.columnconfigure(1, weight=1)
 
-        ttk.Label(top, text="Buscar texto:", font=("Segoe UI", 10, "bold")).grid(row=1, column=0, sticky=tk.W, pady=6)
+        self.lbl_search_text = ttk.Label(top, text="Buscar texto:", font=("Segoe UI", 10, "bold"))
+        self.lbl_search_text.grid(row=1, column=0, sticky=tk.W, pady=6)
         self.var_q = tk.StringVar()
         eq = ttk.Entry(top, textvariable=self.var_q, font=("Segoe UI", 10))
         eq.grid(row=1, column=1, sticky=tk.EW, padx=8, pady=6)
@@ -241,20 +339,36 @@ class ZetaApp:
         self.btn_search = ttk.Button(top, text="Buscar", command=self._start)
         self.btn_search.grid(row=1, column=2)
 
-        opts = ttk.LabelFrame(top, text="Opciones", padding=8)
-        opts.grid(row=2, column=0, columnspan=3, sticky=tk.EW, pady=8)
+        self.lbl_opts = ttk.LabelFrame(top, text="Opciones", padding=8)
+        self.lbl_opts.grid(row=2, column=0, columnspan=3, sticky=tk.EW, pady=8)
         self.var_type = tk.StringVar(value="nombre")
-        ttk.Radiobutton(opts, text="Archivo / Carpeta", variable=self.var_type, value="nombre").pack(side=tk.LEFT, padx=8)
-        ttk.Radiobutton(opts, text="Solo Contenido",    variable=self.var_type, value="contenido").pack(side=tk.LEFT, padx=8)
-        ttk.Separator(opts, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        self.rb_type_name = ttk.Radiobutton(self.lbl_opts, text="Archivo / Carpeta", variable=self.var_type, value="nombre")
+        self.rb_type_name.pack(side=tk.LEFT, padx=8)
+        self.rb_type_content = ttk.Radiobutton(self.lbl_opts, text="Solo Contenido",    variable=self.var_type, value="contenido")
+        self.rb_type_content.pack(side=tk.LEFT, padx=8)
+        ttk.Separator(self.lbl_opts, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
         self.var_exact = tk.BooleanVar()
-        ttk.Checkbutton(opts, text="Nombre Exacto",   variable=self.var_exact).pack(side=tk.LEFT, padx=8)
+        self.chk_exact = ttk.Checkbutton(self.lbl_opts, text="Nombre Exacto",   variable=self.var_exact)
+        self.chk_exact.pack(side=tk.LEFT, padx=8)
         self.var_whole = tk.BooleanVar()
-        ttk.Checkbutton(opts, text="Palabra Completa", variable=self.var_whole).pack(side=tk.LEFT, padx=8)
-        ttk.Separator(opts, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        self.chk_whole = ttk.Checkbutton(self.lbl_opts, text="Palabra Completa", variable=self.var_whole)
+        self.chk_whole.pack(side=tk.LEFT, padx=8)
+        ttk.Separator(self.lbl_opts, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
         self.var_mode = tk.StringVar(value="and")
-        ttk.Radiobutton(opts, text="Todas",  variable=self.var_mode, value="and").pack(side=tk.LEFT, padx=4)
-        ttk.Radiobutton(opts, text="Alguna", variable=self.var_mode, value="or").pack(side=tk.LEFT, padx=4)
+        self.rb_mode_all = ttk.Radiobutton(self.lbl_opts, text="Todas",  variable=self.var_mode, value="and")
+        self.rb_mode_all.pack(side=tk.LEFT, padx=4)
+        self.rb_mode_any = ttk.Radiobutton(self.lbl_opts, text="Alguna", variable=self.var_mode, value="or")
+        self.rb_mode_any.pack(side=tk.LEFT, padx=4)
+
+        # Theme button (small, modern)
+        self.btn_theme = ttk.Button(self.lbl_opts, text="🌙", width=3, command=self._toggle_theme)
+        self.btn_theme.pack(side=tk.RIGHT, padx=8)
+        
+        # Language Selector Combobox
+        self.var_lang = tk.StringVar(value="Español")
+        self.cb_lang = ttk.Combobox(self.lbl_opts, textvariable=self.var_lang, values=["Español", "English"], width=8, state="readonly")
+        self.cb_lang.pack(side=tk.RIGHT, padx=8)
+        self.cb_lang.bind("<<ComboboxSelected>>", lambda e: self._on_language_change())
 
         # Status bar
         sb = ttk.Frame(self.root, padding=4)
@@ -283,9 +397,9 @@ class ZetaApp:
         sb_tree.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        right = ttk.LabelFrame(paned, text="Vista Previa", padding=4)
-        paned.add(right, weight=1)
-        nav = ttk.Frame(right)
+        self.frame_preview = ttk.LabelFrame(paned, text="Vista Previa", padding=4)
+        paned.add(self.frame_preview, weight=1)
+        nav = ttk.Frame(self.frame_preview)
         nav.pack(fill=tk.X, pady=(0,4))
         self.btn_prev = ttk.Button(nav, text="< Anterior", command=self._prev, state=tk.DISABLED)
         self.btn_prev.pack(side=tk.LEFT, padx=4)
@@ -293,8 +407,8 @@ class ZetaApp:
         self.lbl_nav.pack(side=tk.LEFT, expand=True)
         self.btn_next = ttk.Button(nav, text="Siguiente >", command=self._next, state=tk.DISABLED)
         self.btn_next.pack(side=tk.RIGHT, padx=4)
-        self.txt = tk.Text(right, wrap=tk.WORD, state=tk.DISABLED, font=("Consolas",10), width=40)
-        sb_txt = ttk.Scrollbar(right, orient=tk.VERTICAL, command=self.txt.yview)
+        self.txt = tk.Text(self.frame_preview, wrap=tk.WORD, state=tk.DISABLED, font=("Consolas",10), width=40)
+        sb_txt = ttk.Scrollbar(self.frame_preview, orient=tk.VERTICAL, command=self.txt.yview)
         self.txt.configure(yscrollcommand=sb_txt.set)
         sb_txt.pack(side=tk.RIGHT, fill=tk.Y)
         self.txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -312,6 +426,9 @@ class ZetaApp:
         cm.add_command(label="Copiar ruta",     command=self._copy_path)
         self.cm = cm
 
+        self._apply_theme()
+        self._update_language()
+
     # ── helpers UI ────────────────────────────────────────────────────────────
     def _browse(self):
         d = filedialog.askdirectory()
@@ -327,6 +444,7 @@ class ZetaApp:
     def _animate(self):
         if not self.is_searching:
             return
+        t = TRANSLATIONS[self.language]
         elapsed = time.time() - self.start_time
         sc    = self.stats['scanned']
         tot   = self.stats['total']
@@ -334,14 +452,13 @@ class ZetaApp:
         phase = self.stats.get('phase', 'recolectando')
 
         if phase == 'recolectando':
-            tot_str = f"{tot} detectados…"
+            tot_str = t['stats_detecting'].format(total=tot)
         else:
             tot_str = f"/ {tot}" if tot > 0 else ''
 
-        self.var_stats.set(f"⏱ {elapsed:.0f}s  │  Leídos: {sc} {tot_str}  │  Hallados: {mat}")
+        self.var_stats.set(t['stats_running'].format(elapsed=elapsed, scanned=sc, total_str=tot_str, matches=mat))
         self.root.after(200, self._animate)
 
-    # ── poll queue ────────────────────────────────────────────────────────────
     def _poll_queue(self):
         try:
             while True:
@@ -349,9 +466,10 @@ class ZetaApp:
                 if kind == "match":
                     score, path = data
                     if self.matches_shown < 10000:
+                        t = TRANSLATIONS[self.language]
                         self.tree.insert("", tk.END,
                             values=(os.path.basename(path), path,
-                                    "Carpeta" if os.path.isdir(path) else "Archivo"))
+                                    t['type_folder'] if os.path.isdir(path) else t['type_file']))
                         self.matches_shown += 1
                 elif kind == "scan":
                     path, sc, tot, mc = data
@@ -360,7 +478,6 @@ class ZetaApp:
                         'scanned':   sc,
                         'total':     tot,
                         'matches':   mc,
-                        # total=-1 significa que aún estamos en fase de recolección
                         'phase': 'recolectando' if tot < 0 else 'procesando'
                     })
                 elif kind == "status":
@@ -375,20 +492,21 @@ class ZetaApp:
             pass
         self.root.after(80, self._poll_queue)
 
-    # ── start / stop ──────────────────────────────────────────────────────────
     def _start(self):
         if self.is_searching:
             self.engine.stop()
-            self.btn_search.config(text="Cancelando…", state=tk.DISABLED)
+            t = TRANSLATIONS[self.language]
+            self.btn_search.config(text=t['btn_canceling'], state=tk.DISABLED)
             return
 
         base = self.var_path.get().strip()
         qry  = self.var_q.get().strip()
+        t = TRANSLATIONS[self.language]
         if not base or not os.path.isdir(base):
-            messagebox.showwarning("Zeta", "Selecciona una carpeta válida.")
+            messagebox.showwarning("Zeta", t['msg_valid_folder'])
             return
         if not qry:
-            messagebox.showwarning("Zeta", "Ingresa texto a buscar.")
+            messagebox.showwarning("Zeta", t['msg_valid_query'])
             return
 
         self.last_query = qry
@@ -397,9 +515,9 @@ class ZetaApp:
         self._show_raw("")
         self.is_searching = True
         self.start_time = time.time()
-        self.stats = {'scanned': 0, 'matches': 0, 'total': 0, 'last_path': '', 'phase': 'recolectando'}
+        self.stats = {'scanned': 0, 'matches': 0, 'total': 0, 'last_path': '', 'phase': 'recolectando', 'elapsed_time': 0}
         self.matches_shown = 0
-        self.btn_search.config(text="Cancelar")
+        self.btn_search.config(text=t['btn_cancel'])
         self._animate()
 
         kws  = [k.strip() for k in qry.split() if k.strip()]
@@ -412,7 +530,8 @@ class ZetaApp:
                          daemon=True).start()
 
     def _run(self, base, kws, typ, exact, whole, mode_and):
-        self.q.put(("status", "Buscando…"))
+        t = TRANSLATIONS[self.language]
+        self.q.put(("status", t['status_searching']))
         try:
             def match_cb(m):  self.q.put(("match", m))
             def scan_cb(p, sc, tot, mc): self.q.put(("scan", (p, sc, tot, mc)))
@@ -428,19 +547,21 @@ class ZetaApp:
 
     def _finish(self, completed):
         self.is_searching = False
-        self.btn_search.config(text="Buscar", state=tk.NORMAL)
+        t = TRANSLATIONS[self.language]
+        self.btn_search.config(text=t['btn_search'], state=tk.NORMAL)
         elapsed = time.time() - self.start_time
+        self.stats['elapsed_time'] = elapsed
         m   = self.stats['matches']
         tot = self.stats['total']
         sc  = self.stats['scanned']
         if not completed:
-            self.var_status.set("Búsqueda cancelada.")
+            self.var_status.set(t['status_canceled'])
         elif m == 0:
-            self.tree.insert("", tk.END, values=("❌ Sin resultados","",""), tags=("noresult",))
-            self.var_status.set("No se encontraron coincidencias.")
+            self.tree.insert("", tk.END, values=(t['tree_no_results'],"",""), tags=("noresult",))
+            self.var_status.set(t['status_no_results'])
         else:
-            self.var_status.set(f"✅ {m} resultado(s) en {elapsed:.1f}s")
-        self.var_stats.set(f"Total detectados: {tot}  │  Leídos: {sc}  │  Hallados: {m}  │  Tiempo: {elapsed:.1f}s")
+            self.var_status.set(t['status_results'].format(count=m, time=elapsed))
+        self.var_stats.set(t['stats_done'].format(total=tot, scanned=sc, matches=m, time=elapsed))
 
     # ── preview ───────────────────────────────────────────────────────────────
     def _reset_nav(self):
@@ -514,20 +635,22 @@ class ZetaApp:
         path = self._get_sel_path()
         if not path or not os.path.exists(path):
             self._show_raw(""); return
-        self._show_raw("Cargando…")
+        t = TRANSLATIONS[self.language]
+        self._show_raw(t['preview_loading'])
         threading.Thread(target=self._load_preview, args=(path,), daemon=True).start()
 
     def _load_preview(self, path):
+        t = TRANSLATIONS[self.language]
         try:
             if os.path.isdir(path):
                 items = os.listdir(path)
-                txt = f"📁 {os.path.basename(path)}  ({len(items)} elementos)\n\n"
+                txt = t['preview_folder'].format(name=os.path.basename(path), count=len(items))
                 for it in items[:40]: txt += f"  {it}\n"
-                if len(items) > 40: txt += f"\n  … y {len(items)-40} más."
+                if len(items) > 40: txt += t['preview_more'].format(count=len(items)-40)
                 self.q.put(("preview_raw", txt)); return
 
             if path.lower().endswith(('.dll','.exe','.pyc','.png','.jpg','.mp3','.zip','.rar')):
-                self.q.put(("preview_raw", f"Archivo binario: {os.path.basename(path)}")); return
+                self.q.put(("preview_raw", t['preview_binary'].format(name=os.path.basename(path)))); return
 
             size = os.path.getsize(path)
             kws  = [k.strip() for k in self.last_query.split() if k.strip()] if self.last_query else []
@@ -554,14 +677,14 @@ class ZetaApp:
                 content = f.read(50000).decode('utf-8', errors='ignore')
 
             prefix = "…\n" if start > 0 else ""
-            suffix = "\n\n… (truncado) …" if start + 50000 < size else ""
+            suffix = t['preview_truncated'] if start + 50000 < size else ""
 
             if kws:
                 self.q.put(("preview_hl", {"content": content+suffix, "keywords": kws, "prefix": prefix}))
             else:
                 self.q.put(("preview_raw", prefix + content + suffix))
         except Exception as ex:
-            self.q.put(("preview_raw", f"Error: {ex}"))
+            self.q.put(("preview_raw", t['preview_error'].format(error=ex)))
 
     # ── context menu / open ───────────────────────────────────────────────────
     def _ctx_menu(self, e):
@@ -585,7 +708,189 @@ class ZetaApp:
         if p:
             self.root.clipboard_clear()
             self.root.clipboard_append(p)
-            self.var_status.set(f"Copiado: {p}")
+            t = TRANSLATIONS[self.language]
+            self.var_status.set(t['status_copied'].format(path=p))
+
+    # ── theme and language helpers ────────────────────────────────────────────
+    def _on_language_change(self):
+        self._update_language()
+
+    def _toggle_theme(self):
+        self.theme = "dark" if self.theme == "light" else "light"
+        self._apply_theme()
+
+    def _update_language(self):
+        lang = "es" if self.var_lang.get() == "Español" else "en"
+        self.language = lang
+        t = TRANSLATIONS[lang]
+        
+        self.root.title(t['title'])
+        self.lbl_base_folder.config(text=t['lbl_base'])
+        self.btn_browse.config(text=t['btn_browse'])
+        self.lbl_search_text.config(text=t['lbl_search'])
+        
+        if self.is_searching:
+            curr_text = self.btn_search.cget('text')
+            if curr_text in (TRANSLATIONS['es']['btn_canceling'], TRANSLATIONS['en']['btn_canceling']):
+                self.btn_search.config(text=t['btn_canceling'])
+            else:
+                self.btn_search.config(text=t['btn_cancel'])
+        else:
+            self.btn_search.config(text=t['btn_search'])
+            
+        self.lbl_opts.config(text=t['lbl_options'])
+        self.rb_type_name.config(text=t['opt_type_name'])
+        self.rb_type_content.config(text=t['opt_type_content'])
+        self.chk_exact.config(text=t['chk_exact'])
+        self.chk_whole.config(text=t['chk_whole'])
+        self.rb_mode_all.config(text=t['opt_mode_all'])
+        self.rb_mode_any.config(text=t['opt_mode_any'])
+        
+        curr_status = self.var_status.get()
+        if curr_status in (TRANSLATIONS['es']['status_ready'], TRANSLATIONS['en']['status_ready']):
+            self.var_status.set(t['status_ready'])
+        elif curr_status in (TRANSLATIONS['es']['status_searching'], TRANSLATIONS['en']['status_searching']):
+            self.var_status.set(t['status_searching'])
+        elif curr_status in (TRANSLATIONS['es']['status_canceled'], TRANSLATIONS['en']['status_canceled']):
+            self.var_status.set(t['status_canceled'])
+        elif curr_status in (TRANSLATIONS['es']['status_no_results'], TRANSLATIONS['en']['status_no_results']):
+            self.var_status.set(t['status_no_results'])
+        elif "resultado(s) en" in curr_status or "match(es) in" in curr_status:
+            m = self.stats.get('matches', 0)
+            elapsed = self.stats.get('elapsed_time', 0)
+            self.var_status.set(t['status_results'].format(count=m, time=elapsed))
+        elif curr_status.startswith("Copiado: ") or curr_status.startswith("Copied: "):
+            path = curr_status.split(": ", 1)[1] if ": " in curr_status else ""
+            self.var_status.set(t['status_copied'].format(path=path))
+            
+        if self.is_searching:
+            elapsed = time.time() - self.start_time
+            sc = self.stats['scanned']
+            tot = self.stats['total']
+            mat = self.stats['matches']
+            phase = self.stats.get('phase', 'recolectando')
+            if phase == 'recolectando':
+                tot_str = t['stats_detecting'].format(total=tot)
+            else:
+                tot_str = f"/ {tot}" if tot > 0 else ''
+            self.var_stats.set(t['stats_running'].format(elapsed=elapsed, scanned=sc, total_str=tot_str, matches=mat))
+        else:
+            m = self.stats.get('matches', 0)
+            tot = self.stats.get('total', 0)
+            sc = self.stats.get('scanned', 0)
+            elapsed = self.stats.get('elapsed_time', 0)
+            self.var_stats.set(t['stats_done'].format(total=tot, scanned=sc, matches=m, time=elapsed))
+            
+        self.frame_preview.config(text=t['lbl_preview'])
+        self.btn_prev.config(text=t['btn_prev'])
+        self.btn_next.config(text=t['btn_next'])
+        
+        self.tree.heading("nombre", text=t['col_name'])
+        self.tree.heading("ruta", text=t['col_path'])
+        self.tree.heading("tipo", text=t['col_type'])
+        
+        self.cm.entryconfigure(0, label=t['menu_open'])
+        self.cm.entryconfigure(1, label=t['menu_open_loc'])
+        self.cm.entryconfigure(2, label=t['menu_copy_path'])
+
+    def _apply_theme(self):
+        theme_colors = {
+            'light': {
+                'bg': '#f3f4f6',
+                'fg': '#1f2937',
+                'field_bg': '#ffffff',
+                'border': '#d1d5db',
+                'btn_bg': '#e5e7eb',
+                'btn_active': '#d1d5db',
+                'btn_disabled': '#f3f4f6',
+                'fg_disabled': '#9ca3af',
+                'accent': '#2563eb',
+                'sel_fg': '#ffffff',
+                'txt_match_bg': '#a8e6cf',
+                'txt_match_fg': 'black',
+                'txt_match_active_bg': '#22c55e',
+                'txt_match_active_fg': 'white',
+                'theme_icon': '🌙'
+            },
+            'dark': {
+                'bg': '#1f2937',
+                'fg': '#f9fafb',
+                'field_bg': '#111827',
+                'border': '#374151',
+                'btn_bg': '#374151',
+                'btn_active': '#4b5563',
+                'btn_disabled': '#1f2937',
+                'fg_disabled': '#6b7280',
+                'accent': '#3b82f6',
+                'sel_fg': '#ffffff',
+                'txt_match_bg': '#1e3a8a',
+                'txt_match_fg': '#f9fafb',
+                'txt_match_active_bg': '#2563eb',
+                'txt_match_active_fg': '#ffffff',
+                'theme_icon': '☀️'
+            }
+        }
+        
+        c = theme_colors[self.theme]
+        
+        self.root.config(bg=c['bg'])
+        self.txt.config(
+            bg=c['field_bg'], 
+            fg=c['fg'], 
+            insertbackground=c['fg'], 
+            selectbackground=c['accent'], 
+            selectforeground=c['sel_fg']
+        )
+        self.txt.tag_config("match", background=c['txt_match_bg'], foreground=c['txt_match_fg'])
+        self.txt.tag_config("active", background=c['txt_match_active_bg'], foreground=c['txt_match_active_fg'])
+        self.cm.config(bg=c['bg'], fg=c['fg'], activebackground=c['accent'], activeforeground=c['sel_fg'])
+        
+        self.style.configure('.', background=c['bg'], foreground=c['fg'])
+        self.style.configure('TFrame', background=c['bg'])
+        self.style.configure('TLabel', background=c['bg'], foreground=c['fg'])
+        self.style.configure('TLabelframe', background=c['bg'], foreground=c['fg'], bordercolor=c['border'])
+        self.style.configure('TLabelframe.Label', background=c['bg'], foreground=c['fg'])
+        
+        self.style.configure('TButton', background=c['btn_bg'], foreground=c['fg'], bordercolor=c['border'], focuscolor='', lightcolor=c['btn_bg'], darkcolor=c['btn_bg'])
+        self.style.map('TButton', 
+            background=[('active', c['btn_active']), ('disabled', c['btn_disabled'])], 
+            foreground=[('disabled', c['fg_disabled'])],
+            bordercolor=[('active', c['border']), ('disabled', c['border'])]
+        )
+        
+        self.style.configure('TRadiobutton', background=c['bg'], foreground=c['fg'], focuscolor='', indicatorbackground=c['field_bg'], indicatorforeground=c['fg'])
+        self.style.map('TRadiobutton', 
+            background=[('active', c['bg'])], 
+            indicatorbackground=[('selected', c['accent']), ('!selected', c['field_bg'])],
+            foreground=[('active', c['fg'])]
+        )
+        self.style.configure('TCheckbutton', background=c['bg'], foreground=c['fg'], focuscolor='', indicatorbackground=c['field_bg'], indicatorforeground=c['fg'])
+        self.style.map('TCheckbutton', 
+            background=[('active', c['bg'])], 
+            indicatorbackground=[('selected', c['accent']), ('!selected', c['field_bg'])],
+            foreground=[('active', c['fg'])]
+        )
+        
+        self.style.configure('TEntry', fieldbackground=c['field_bg'], foreground=c['fg'], bordercolor=c['border'], lightcolor=c['field_bg'], darkcolor=c['field_bg'])
+        self.style.map('TEntry', bordercolor=[('focus', c['accent']), ('!focus', c['border'])])
+        
+        self.style.configure('Treeview', background=c['field_bg'], foreground=c['fg'], fieldbackground=c['field_bg'], bordercolor=c['border'])
+        self.style.configure('Treeview.Heading', background=c['btn_bg'], foreground=c['fg'], bordercolor=c['border'], lightcolor=c['btn_bg'], darkcolor=c['btn_bg'])
+        self.style.map('Treeview.Heading', background=[('active', c['btn_active'])])
+        self.style.map('Treeview', background=[('selected', c['accent'])], foreground=[('selected', c['sel_fg'])])
+        
+        self.style.configure('TCombobox', fieldbackground=c['field_bg'], foreground=c['fg'], background=c['btn_bg'], bordercolor=c['border'], arrowcolor=c['fg'])
+        self.style.map('TCombobox', 
+            fieldbackground=[('readonly', c['field_bg'])], 
+            foreground=[('readonly', c['fg'])],
+            arrowcolor=[('active', c['accent'])]
+        )
+        
+        self.style.configure("Status.TLabel", font=("Segoe UI", 10, "bold"), background=c['bg'], foreground=c['fg'])
+        self.style.configure("Stats.TLabel", font=("Segoe UI", 9), background=c['bg'], foreground=c['fg'] if self.theme == 'dark' else '#333333')
+        
+        self.btn_theme.config(text=c['theme_icon'])
+        self.tree.tag_configure("noresult", foreground="red" if self.theme == 'light' else "#ff6b6b")
 
 
 if __name__ == '__main__':
