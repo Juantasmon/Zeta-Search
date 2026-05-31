@@ -272,14 +272,16 @@ class ZetaApp:
         paned.add(left, weight=2)
         cols = ("nombre","ruta","tipo")
         self.tree = ttk.Treeview(left, columns=cols, show="headings")
-        for c, w, t in (("nombre",240,"Nombre"),("ruta",420,"Ruta"),("tipo",70,"Tipo")):
+        for c, w, t, stretch in (("nombre", 150, "Nombre", False),
+                                 ("ruta", 250, "Ruta", True),
+                                 ("tipo", 70, "Tipo", False)):
             self.tree.heading(c, text=t)
-            self.tree.column(c, width=w, anchor=tk.W)
+            self.tree.column(c, width=w, anchor=tk.W, stretch=stretch)
         self.tree.tag_configure("noresult", foreground="red")
         sb_tree = ttk.Scrollbar(left, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb_tree.set)
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sb_tree.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         right = ttk.LabelFrame(paned, text="Vista Previa", padding=4)
         paned.add(right, weight=1)
@@ -291,11 +293,11 @@ class ZetaApp:
         self.lbl_nav.pack(side=tk.LEFT, expand=True)
         self.btn_next = ttk.Button(nav, text="Siguiente >", command=self._next, state=tk.DISABLED)
         self.btn_next.pack(side=tk.RIGHT, padx=4)
-        self.txt = tk.Text(right, wrap=tk.WORD, state=tk.DISABLED, font=("Consolas",10))
+        self.txt = tk.Text(right, wrap=tk.WORD, state=tk.DISABLED, font=("Consolas",10), width=40)
         sb_txt = ttk.Scrollbar(right, orient=tk.VERTICAL, command=self.txt.yview)
         self.txt.configure(yscrollcommand=sb_txt.set)
-        self.txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sb_txt.pack(side=tk.RIGHT, fill=tk.Y)
+        self.txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.txt.tag_config("match",  background="#a8e6cf", foreground="black")
         self.txt.tag_config("active", background="#22c55e", foreground="white",
                             font=("Consolas",10,"bold"))
