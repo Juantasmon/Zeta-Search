@@ -310,6 +310,14 @@ class ZetaApp:
 
         self.language = "es"
         self.theme = "light"
+        self._load_settings()
+
+        # Load custom theme image
+        base = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+        self.theme_img_path = os.path.join(base, "theme.png")
+        self.theme_photo_light = None
+        self.theme_photo_dark = None
+        self._load_theme_images()
 
         self._build_ui()
         self.root.after(80, self._poll_queue)
@@ -361,11 +369,12 @@ class ZetaApp:
         self.rb_mode_any.pack(side=tk.LEFT, padx=4)
 
         # Theme button (small, modern)
-        self.btn_theme = ttk.Button(self.lbl_opts, text="🌙", width=3, command=self._toggle_theme)
+        self.btn_theme = ttk.Button(self.lbl_opts, command=self._toggle_theme)
         self.btn_theme.pack(side=tk.RIGHT, padx=8)
         
         # Language Selector Combobox
-        self.var_lang = tk.StringVar(value="Español")
+        lang_display = "Español" if self.language == "es" else "English"
+        self.var_lang = tk.StringVar(value=lang_display)
         self.cb_lang = ttk.Combobox(self.lbl_opts, textvariable=self.var_lang, values=["Español", "English"], width=8, state="readonly")
         self.cb_lang.pack(side=tk.RIGHT, padx=8)
         self.cb_lang.bind("<<ComboboxSelected>>", lambda e: self._on_language_change())
@@ -713,11 +722,59 @@ class ZetaApp:
 
     # ── theme and language helpers ────────────────────────────────────────────
     def _on_language_change(self):
+        lang = "es" if self.var_lang.get() == "Español" else "en"
+        self.language = lang
         self._update_language()
+        self._save_settings()
 
     def _toggle_theme(self):
         self.theme = "dark" if self.theme == "light" else "light"
         self._apply_theme()
+        self._save_settings()
+
+    def _load_settings(self):
+        import json
+        self.config_dir = os.path.join(os.path.expanduser('~'), '.zeta_search')
+        self.config_file = os.path.join(self.config_dir, 'config.json')
+        self.language = "es"
+        self.theme = "light"
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                    self.language = cfg.get('language', 'es')
+                    self.theme = cfg.get('theme', 'light')
+        except Exception:
+            pass
+
+    def _save_settings(self):
+        import json
+        try:
+            if not os.path.exists(self.config_dir):
+                os.makedirs(self.config_dir, exist_ok=True)
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump({'language': self.language, 'theme': self.theme}, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
+
+    def _load_theme_images(self):
+        from PIL import Image, ImageOps, ImageTk
+        try:
+            if os.path.exists(self.theme_img_path):
+                img = Image.open(self.theme_img_path).convert("RGBA")
+                # Light mode: original color (usually black/dark icon)
+                img_light = img.resize((20, 20), Image.Resampling.LANCZOS)
+                self.theme_photo_light = ImageTk.PhotoImage(img_light)
+                
+                # Dark mode: inverted colors (white/light icon)
+                r, g, b, a = img.split()
+                rgb_img = Image.merge("RGB", (r, g, b))
+                inverted_rgb = ImageOps.invert(rgb_img)
+                ir, ig, ib = inverted_rgb.split()
+                img_dark = Image.merge("RGBA", (ir, ig, ib, a)).resize((20, 20), Image.Resampling.LANCZOS)
+                self.theme_photo_dark = ImageTk.PhotoImage(img_dark)
+        except Exception:
+            pass
 
     def _update_language(self):
         lang = "es" if self.var_lang.get() == "Español" else "en"
@@ -889,7 +946,14 @@ class ZetaApp:
         self.style.configure("Status.TLabel", font=("Segoe UI", 10, "bold"), background=c['bg'], foreground=c['fg'])
         self.style.configure("Stats.TLabel", font=("Segoe UI", 9), background=c['bg'], foreground=c['fg'] if self.theme == 'dark' else '#333333')
         
-        self.btn_theme.config(text=c['theme_icon'])
+        # Update theme button icon or text
+        if self.theme == 'light' and self.theme_photo_light:
+            self.btn_theme.config(image=self.theme_photo_light, text="")
+        elif self.theme == 'dark' and self.theme_photo_dark:
+            self.btn_theme.config(image=self.theme_photo_dark, text="")
+        else:
+            self.btn_theme.config(image="", text=c['theme_icon'])
+            
         self.tree.tag_configure("noresult", foreground="red" if self.theme == 'light' else "#ff6b6b")
 
 
