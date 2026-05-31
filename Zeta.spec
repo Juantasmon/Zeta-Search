@@ -5,7 +5,7 @@ a = Analysis(
     ['zeta.py'],
     pathex=[],
     binaries=[],
-    datas=[('buscador.ico', '.')],
+    datas=[('buscador.ico', '.'), ('theme.png', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
