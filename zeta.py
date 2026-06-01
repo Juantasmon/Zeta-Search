@@ -226,7 +226,11 @@ TRANSLATIONS = {
         'date_today': 'Hoy',
         'date_week': 'Esta semana',
         'date_month': 'Este mes',
-        'tip_cb_date': 'Filtra los resultados por la fecha de última modificación.'
+        'tip_cb_date': 'Filtra los resultados por la fecha de última modificación.',
+        'chk_regex': 'Regex',
+        'tip_chk_regex': 'Habilita la búsqueda por expresiones regulares.',
+        'btn_export': 'Exportar',
+        'tip_export': 'Exporta la lista de resultados a un archivo CSV o TXT.'
     },
     'en': {
         'title': 'Zeta',
@@ -301,7 +305,11 @@ TRANSLATIONS = {
         'date_today': 'Today',
         'date_week': 'This week',
         'date_month': 'This month',
-        'tip_cb_date': 'Filters results by the last modification date.'
+        'tip_cb_date': 'Filters results by the last modification date.',
+        'chk_regex': 'Regex',
+        'tip_chk_regex': 'Enables regular expression search.',
+        'btn_export': 'Export',
+        'tip_export': 'Exports the list of results to a CSV or TXT file.'
     }
 }
 
@@ -323,12 +331,18 @@ def make_regex_pattern(word: str) -> str:
 # ── pool-worker (debe ser pickleable = nivel de módulo) ───────────────────────
 def _search_chunk(args):
     """Procesa un lote (chunk) de archivos a nivel de bytes, sin decodificar."""
-    paths_meta, keywords_bytes, whole_word = args
+    paths_meta, keywords_bytes, whole_word, regex, exact = args
     results = []
     new_cache_entries = []
     
     # Precompilar patrones de expresiones regulares si es búsqueda por palabra completa
-    if whole_word:
+    if regex:
+        try:
+            flags = re.IGNORECASE if not exact else 0
+            pat = re.compile(keywords_bytes[0], flags)
+        except Exception:
+            return (len(paths_meta), [], [])
+    elif whole_word:
         first_pattern = re.compile(br'(?<![a-z0-9])' + re.escape(keywords_bytes[0]) + br'(?![a-z0-9])')
         other_patterns = [re.compile(br'(?<![a-z0-9])' + re.escape(kw) + br'(?![a-z0-9])') for kw in keywords_bytes[1:]]
     else:
@@ -359,7 +373,14 @@ def _search_chunk(args):
             normalized_str = normalized.decode('latin-1', errors='ignore')
             new_cache_entries.append((path, mtime, size, normalized_str))
             
-            if whole_word:
+            if regex:
+                try:
+                    count = len(pat.findall(normalized))
+                except Exception:
+                    count = 0
+                if count > 0:
+                    results.append((count, path))
+            elif whole_word:
                 count = len(first_pattern.findall(normalized))
                 if count > 0:
                     match_all = True
@@ -562,18 +583,34 @@ class SearchEngine:
         yield from self._walk_files_scandir(root, text_only, extensions, blacklist)
 
     # ── búsqueda por nombre ───────────────────────────────────────────────────
-    def search_name(self, root, keywords, exact, extensions, match_cb, scan_cb, blacklist=None, threshold=None):
+    def search_name(self, root, keywords, exact, extensions, match_cb, scan_cb, blacklist=None, threshold=None, regex=False):
         """scan_cb(path, scanned, total, matches) - total=-1 mientras recolecta"""
         self.cancel = False
-        kws = [kw.lower() for kw in keywords] if exact else [_normalize_name(kw) for kw in keywords]
+        if regex:
+            try:
+                flags = 0 if exact else re.IGNORECASE
+                pat = re.compile(keywords[0], flags)
+            except Exception:
+                scan_cb('', 0, 0, 0)
+                return
+        else:
+            kws = [kw.lower() for kw in keywords] if exact else [_normalize_name(kw) for kw in keywords]
         n = 0
         matches = 0
         for entry in self._walk_files(root, text_only=False, extensions=extensions, blacklist=blacklist):
             if self.cancel:
                 break
             n += 1
-            name = entry.name.lower() if exact else _normalize_name(entry.name)
-            if all(k in name for k in kws):
+            if regex:
+                try:
+                    matched = bool(pat.search(entry.name))
+                except Exception:
+                    matched = False
+            else:
+                name = entry.name.lower() if exact else _normalize_name(entry.name)
+                matched = all(k in name for k in kws)
+
+            if matched:
                 if threshold is not None:
                     try:
                         mtime = os.path.getmtime(entry.path)
@@ -581,7 +618,7 @@ class SearchEngine:
                             continue
                     except Exception:
                         continue
-                score = 100 if name == kws[0] else 10
+                score = 100 if (not regex and entry.name.lower() == keywords[0].lower()) else 10
                 match_cb((score, entry.path))
                 matches += 1
             if n % 2000 == 0:
@@ -589,7 +626,7 @@ class SearchEngine:
         scan_cb('', n, n, matches)
 
     # ── búsqueda por contenido con multiprocessing ────────────────────────────
-    def search_content(self, root, keywords, mode_and, whole_word, extensions, match_cb, scan_cb, blacklist=None, threshold=None):
+    def search_content(self, root, keywords, mode_and, whole_word, extensions, match_cb, scan_cb, blacklist=None, threshold=None, regex=False, exact=False):
         """
         Fase 1: recolectar TODOS los archivos (rápido, Win32 / os.scandir).
         Fase 2: procesar con pool de forma dinámica a nivel de bytes puros.
@@ -638,7 +675,15 @@ class SearchEngine:
         last_path = all_files[-1][0]
 
         # Precompilar patrones de expresiones regulares para coincidencia de caché
-        if whole_word:
+        if regex:
+            try:
+                query_norm = _normalize(keywords[0])
+                flags = re.IGNORECASE if not exact else 0
+                pat_str = re.compile(query_norm, flags)
+            except Exception:
+                scan_cb('', 0, 0, 0)
+                return
+        elif whole_word:
             first_pattern = re.compile(r'(?<![a-z0-9])' + re.escape(kws_norm[0]) + r'(?![a-z0-9])')
             other_patterns = [re.compile(r'(?<![a-z0-9])' + re.escape(kw) + r'(?![a-z0-9])') for kw in kws_norm[1:]]
         else:
@@ -653,7 +698,15 @@ class SearchEngine:
             if cached and cached[0] == mtime and cached[1] == size:
                 done += 1
                 normalized_str = cached[2]
-                if whole_word:
+                if regex:
+                    try:
+                        count = len(pat_str.findall(normalized_str))
+                    except Exception:
+                        count = 0
+                    if count > 0:
+                        matches += 1
+                        match_cb((count, path))
+                elif whole_word:
                     count = len(first_pattern.findall(normalized_str))
                     if count > 0:
                         match_all = True
@@ -691,7 +744,7 @@ class SearchEngine:
         keywords_bytes = [kw.encode('latin-1', errors='ignore') for kw in kws_norm]
         chunks = [uncached_files[i:i + BATCH_SIZE] for i in range(0, len(uncached_files), BATCH_SIZE)]
         tasks_args = [
-            (chunk, keywords_bytes, whole_word)
+            (chunk, keywords_bytes, whole_word, regex, exact)
             for chunk in chunks
         ]
 
@@ -793,9 +846,10 @@ class ZetaApp:
         self.lbl_search_text = ttk.Label(top, text="Buscar texto:", font=("Segoe UI", 10, "bold"))
         self.lbl_search_text.grid(row=1, column=0, sticky=tk.W, pady=6)
         self.var_q = tk.StringVar()
-        eq = ttk.Entry(top, textvariable=self.var_q, font=("Segoe UI", 10))
-        eq.grid(row=1, column=1, sticky=tk.EW, padx=8, pady=6)
-        eq.bind("<Return>", lambda e: self._start())
+        self.cb_q = ttk.Combobox(top, textvariable=self.var_q, font=("Segoe UI", 10))
+        self.cb_q.grid(row=1, column=1, sticky=tk.EW, padx=8, pady=6)
+        self.cb_q.bind("<Return>", lambda e: self._start())
+        self.cb_q.config(values=self.search_history)
         self.btn_search = ttk.Button(top, text="Buscar", command=self._start)
         self.btn_search.grid(row=1, column=2)
 
@@ -807,6 +861,9 @@ class ZetaApp:
 
         row2 = ttk.Frame(self.lbl_opts)
         row2.pack(fill=tk.X, expand=True, pady=2)
+
+        row3 = ttk.Frame(self.lbl_opts)
+        row3.pack(fill=tk.X, expand=True, pady=2)
 
         self.var_type = tk.StringVar(value="nombre")
         self.rb_type_name = ttk.Radiobutton(row1, text="Archivo / Carpeta", variable=self.var_type, value="nombre")
@@ -822,6 +879,9 @@ class ZetaApp:
         self.var_whole = tk.BooleanVar()
         self.chk_whole = ttk.Checkbutton(row1, text="Palabra Completa", variable=self.var_whole)
         self.chk_whole.pack(side=tk.LEFT, padx=5)
+        self.var_regex = tk.BooleanVar()
+        self.chk_regex = ttk.Checkbutton(row1, text="Regex", variable=self.var_regex)
+        self.chk_regex.pack(side=tk.LEFT, padx=5)
 
         ttk.Separator(row1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
 
@@ -831,64 +891,63 @@ class ZetaApp:
         self.rb_mode_any = ttk.Radiobutton(row1, text="Alguna", variable=self.var_mode, value="or")
         self.rb_mode_any.pack(side=tk.LEFT, padx=4)
 
-        ttk.Separator(row1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-
-        self.lbl_file_type = ttk.Label(row1, text="Tipo:")
+        # Row 2: Filters and Preferences
+        self.lbl_file_type = ttk.Label(row2, text="Tipo:")
         self.lbl_file_type.pack(side=tk.LEFT, padx=4)
         self.var_file_type = tk.StringVar()
-        self.cb_file_type = ttk.Combobox(row1, textvariable=self.var_file_type, state="readonly", width=12)
+        self.cb_file_type = ttk.Combobox(row2, textvariable=self.var_file_type, state="readonly", width=12)
         self.cb_file_type.pack(side=tk.LEFT, padx=4)
         self.cb_file_type.bind("<<ComboboxSelected>>", lambda e: self._on_file_type_change())
 
-        self.lbl_date = ttk.Label(row1, text="Fecha:")
+        self.lbl_date = ttk.Label(row2, text="Fecha:")
         self.lbl_date.pack(side=tk.LEFT, padx=4)
         self.var_date = tk.StringVar()
-        self.cb_date = ttk.Combobox(row1, textvariable=self.var_date, state="readonly", width=14)
+        self.cb_date = ttk.Combobox(row2, textvariable=self.var_date, state="readonly", width=14)
         self.cb_date.pack(side=tk.LEFT, padx=4)
         self.cb_date.bind("<<ComboboxSelected>>", lambda e: self._on_date_change())
 
         # Theme button (small, modern)
-        self.btn_theme = ttk.Button(row1, command=self._toggle_theme)
+        self.btn_theme = ttk.Button(row2, command=self._toggle_theme)
         self.btn_theme.pack(side=tk.RIGHT, padx=5)
         
         # Language Selector Combobox
         lang_display = "Español" if self.language == "es" else "English"
         self.var_lang = tk.StringVar(value=lang_display)
-        self.cb_lang = ttk.Combobox(row1, textvariable=self.var_lang, values=["Español", "English"], width=8, state="readonly")
+        self.cb_lang = ttk.Combobox(row2, textvariable=self.var_lang, values=["Español", "English"], width=8, state="readonly")
         self.cb_lang.pack(side=tk.RIGHT, padx=5)
         self.cb_lang.bind("<<ComboboxSelected>>", lambda e: self._on_language_change())
 
-        # --- Row 2: Blacklist Exclusions ---
-        self.lbl_ignore = ttk.Label(row2, text="Ignorar:", font=("Segoe UI", 9, "bold"))
+        # --- Row 3: Blacklist Exclusions ---
+        self.lbl_ignore = ttk.Label(row3, text="Ignorar:", font=("Segoe UI", 9, "bold"))
         self.lbl_ignore.pack(side=tk.LEFT, padx=(5, 8))
 
         self.var_ignore_git = tk.BooleanVar(value=self.ignore_git)
-        self.chk_ignore_git = ttk.Checkbutton(row2, text=".git", variable=self.var_ignore_git)
+        self.chk_ignore_git = ttk.Checkbutton(row3, text=".git", variable=self.var_ignore_git)
         self.chk_ignore_git.pack(side=tk.LEFT, padx=5)
 
         self.var_ignore_node = tk.BooleanVar(value=self.ignore_node)
-        self.chk_ignore_node = ttk.Checkbutton(row2, text="node_modules", variable=self.var_ignore_node)
+        self.chk_ignore_node = ttk.Checkbutton(row3, text="node_modules", variable=self.var_ignore_node)
         self.chk_ignore_node.pack(side=tk.LEFT, padx=5)
 
         self.var_ignore_appdata = tk.BooleanVar(value=self.ignore_appdata)
-        self.chk_ignore_appdata = ttk.Checkbutton(row2, text="AppData", variable=self.var_ignore_appdata)
+        self.chk_ignore_appdata = ttk.Checkbutton(row3, text="AppData", variable=self.var_ignore_appdata)
         self.chk_ignore_appdata.pack(side=tk.LEFT, padx=5)
 
         self.var_ignore_cache = tk.BooleanVar(value=self.ignore_cache)
-        self.chk_ignore_cache = ttk.Checkbutton(row2, text="cache", variable=self.var_ignore_cache)
+        self.chk_ignore_cache = ttk.Checkbutton(row3, text="cache", variable=self.var_ignore_cache)
         self.chk_ignore_cache.pack(side=tk.LEFT, padx=5)
 
         self.var_ignore_system = tk.BooleanVar(value=self.ignore_system)
-        self.chk_ignore_system = ttk.Checkbutton(row2, text="sistema/papelera", variable=self.var_ignore_system)
+        self.chk_ignore_system = ttk.Checkbutton(row3, text="sistema/papelera", variable=self.var_ignore_system)
         self.chk_ignore_system.pack(side=tk.LEFT, padx=5)
 
-        ttk.Separator(row2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Separator(row3, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
 
-        self.lbl_ignore_custom = ttk.Label(row2, text="Otros (comas):")
+        self.lbl_ignore_custom = ttk.Label(row3, text="Otros (comas):")
         self.lbl_ignore_custom.pack(side=tk.LEFT, padx=4)
 
         self.var_custom_ignore = tk.StringVar(value=self.custom_ignore)
-        self.ent_custom_ignore = ttk.Entry(row2, textvariable=self.var_custom_ignore, font=("Segoe UI", 9))
+        self.ent_custom_ignore = ttk.Entry(row3, textvariable=self.var_custom_ignore, font=("Segoe UI", 9))
         self.ent_custom_ignore.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 10))
 
         # Status bar
@@ -896,6 +955,8 @@ class ZetaApp:
         sb.pack(fill=tk.X, side=tk.BOTTOM)
         self.var_status = tk.StringVar(value="Listo.")
         ttk.Label(sb, textvariable=self.var_status, style="Status.TLabel").pack(side=tk.LEFT, padx=4)
+        self.btn_export = ttk.Button(sb, text="Exportar", command=self._export, style="TButton")
+        self.btn_export.pack(side=tk.LEFT, padx=15)
         self.var_stats = tk.StringVar(value="")
         ttk.Label(sb, textvariable=self.var_stats, style="Stats.TLabel").pack(side=tk.RIGHT, padx=8)
 
@@ -943,6 +1004,8 @@ class ZetaApp:
         self.tip_rb_mode_any = Hovertip(self.rb_mode_any, t['tip_rb_mode_any'], hover_delay=500)
         self.tip_cb_file_type = Hovertip(self.cb_file_type, t['tip_cb_file_type'], hover_delay=500)
         self.tip_cb_date = Hovertip(self.cb_date, t['tip_cb_date'], hover_delay=500)
+        self.tip_chk_regex = Hovertip(self.chk_regex, t['tip_chk_regex'], hover_delay=500)
+        self.tip_export = Hovertip(self.btn_export, t['tip_export'], hover_delay=500)
 
         self.frame_preview = ttk.LabelFrame(paned, text="Vista Previa", padding=4)
         paned.add(self.frame_preview, weight=1)
@@ -1011,7 +1074,7 @@ class ZetaApp:
             while True:
                 kind, data = self.q.get_nowait()
                 if not self.is_searching:
-                    if kind not in ("preview_raw", "preview_hl"):
+                    if kind not in ("preview_raw", "preview_hl", "preview_image"):
                         continue
                 if kind == "match":
                     score, path = data
@@ -1038,6 +1101,8 @@ class ZetaApp:
                     self._show_raw(data)
                 elif kind == "preview_hl":
                     self._show_highlight(data)
+                elif kind == "preview_image":
+                    self._show_image(data)
         except queue.Empty:
             pass
         self.root.after(80, self._poll_queue)
@@ -1073,6 +1138,13 @@ class ZetaApp:
             messagebox.showwarning("Zeta", t['msg_valid_query'])
             return
 
+        # Guardar en el historial
+        if qry in self.search_history:
+            self.search_history.remove(qry)
+        self.search_history.insert(0, qry)
+        self.search_history = self.search_history[:10]
+        self.cb_q.config(values=self.search_history)
+
         self.last_query = qry
         self.last_type  = self.var_type.get()
         for i in self.tree.get_children(): self.tree.delete(i)
@@ -1084,7 +1156,19 @@ class ZetaApp:
         self.btn_search.config(text=t['btn_cancel'])
         self._animate()
 
-        kws  = [k.strip() for k in qry.split() if k.strip()]
+        regex = self.var_regex.get()
+        if regex:
+            try:
+                re.compile(qry)
+            except re.error as ex:
+                messagebox.showwarning("Zeta", f"Expresión regular inválida: {ex}")
+                self.is_searching = False
+                self.btn_search.config(text=t['btn_search'])
+                return
+            kws = [qry]
+        else:
+            kws = [k.strip() for k in qry.split() if k.strip()]
+
         mode_and = self.var_mode.get() == "and"
         exact    = self.var_exact.get()
         whole    = self.var_whole.get()
@@ -1119,10 +1203,10 @@ class ZetaApp:
             threshold = time.time() - 30 * 24 * 3600
 
         self._save_settings()
-        threading.Thread(target=self._run, args=(base, kws, typ, exact, whole, mode_and, exts, tuple(blacklist), threshold),
+        threading.Thread(target=self._run, args=(base, kws, typ, exact, whole, mode_and, exts, tuple(blacklist), threshold, regex),
                          daemon=True).start()
 
-    def _run(self, base, kws, typ, exact, whole, mode_and, exts, blacklist, threshold):
+    def _run(self, base, kws, typ, exact, whole, mode_and, exts, blacklist, threshold, regex):
         t = TRANSLATIONS[self.language]
         self.q.put(("status", t['status_searching']))
         try:
@@ -1130,9 +1214,9 @@ class ZetaApp:
             def scan_cb(p, sc, tot, mc): self.q.put(("scan", (p, sc, tot, mc)))
 
             if typ == "nombre":
-                self.engine.search_name(base, kws, exact, exts, match_cb, scan_cb, blacklist, threshold)
+                self.engine.search_name(base, kws, exact, exts, match_cb, scan_cb, blacklist, threshold, regex)
             else:
-                self.engine.search_content(base, kws, mode_and, whole, exts, match_cb, scan_cb, blacklist, threshold)
+                self.engine.search_content(base, kws, mode_and, whole, exts, match_cb, scan_cb, blacklist, threshold, regex, exact)
             self.q.put(("done", not self.engine.cancel))
         except Exception as e:
             self.q.put(("status", f"Error: {e}"))
@@ -1242,7 +1326,12 @@ class ZetaApp:
                 if len(items) > 40: txt += t['preview_more'].format(count=len(items)-40)
                 self.q.put(("preview_raw", txt)); return
 
-            if path.lower().endswith(('.dll','.exe','.pyc','.png','.jpg','.mp3','.zip','.rar')):
+            ext = os.path.splitext(path)[1].lower()
+            if ext in ('.png', '.jpg', '.jpeg', '.gif', '.bmp'):
+                self.q.put(("preview_image", path))
+                return
+
+            if path.lower().endswith(('.dll','.exe','.pyc','.mp3','.zip','.rar')):
                 self.q.put(("preview_raw", t['preview_binary'].format(name=os.path.basename(path)))); return
 
             ext = os.path.splitext(path)[1].lower()
@@ -1337,6 +1426,64 @@ class ZetaApp:
             t = TRANSLATIONS[self.language]
             self.var_status.set(t['status_copied'].format(path=p))
 
+    def _show_image(self, path):
+        self._reset_nav()
+        self.txt.config(state=tk.NORMAL)
+        self.txt.delete("1.0", tk.END)
+        try:
+            from PIL import Image, ImageTk
+            img = Image.open(path)
+            max_w = self.txt.winfo_width() - 20
+            max_h = self.txt.winfo_height() - 20
+            if max_w <= 100: max_w = 300
+            if max_h <= 100: max_h = 350
+            
+            img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+            self.preview_photo = ImageTk.PhotoImage(img)
+            self.txt.image_create(tk.END, image=self.preview_photo)
+        except Exception as e:
+            t = TRANSLATIONS[self.language]
+            self.txt.insert(tk.END, t['preview_error'].format(error=e))
+        self.txt.config(state=tk.DISABLED)
+
+    def _export(self):
+        items = self.tree.get_children()
+        if not items:
+            return
+        first_item = self.tree.item(items[0])
+        if first_item and "noresult" in first_item.get("tags", ()):
+            return
+
+        data = []
+        for item in items:
+            v = self.tree.item(item)['values']
+            if v and len(v) >= 3:
+                data.append(v)
+
+        t = TRANSLATIONS[self.language]
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV (valores separados por comas)", "*.csv"), ("Texto plano", "*.txt")] if self.language == "es" else 
+                      [("CSV (Comma separated values)", "*.csv"), ("Plain text", "*.txt")],
+            title=t['btn_export']
+        )
+        if file_path:
+            try:
+                import csv
+                is_csv = file_path.lower().endswith('.csv')
+                with open(file_path, 'w', encoding='utf-8', newline='') as f:
+                    if is_csv:
+                        delim = ';' if self.language == 'es' else ','
+                        writer = csv.writer(f, delimiter=delim)
+                        writer.writerow([t['col_name'], t['col_path'], t['col_type']])
+                        writer.writerows(data)
+                    else:
+                        for name, path, typ in data:
+                            f.write(f"{name}\t{path}\t{typ}\n")
+                self.var_status.set(f"Exportado: {os.path.basename(file_path)}")
+            except Exception as ex:
+                messagebox.showerror("Zeta", f"Error al exportar: {ex}")
+
     # ── theme and language helpers ────────────────────────────────────────────
     def _on_language_change(self):
         align_lang = "es" if self.var_lang.get() == "Español" else "en"
@@ -1377,6 +1524,7 @@ class ZetaApp:
         self.ignore_cache = True
         self.ignore_system = True
         self.custom_ignore = ""
+        self.search_history = []
         try:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r', encoding='utf-8') as f:
@@ -1389,6 +1537,7 @@ class ZetaApp:
                     self.ignore_cache = cfg.get('ignore_cache', True)
                     self.ignore_system = cfg.get('ignore_system', True)
                     self.custom_ignore = ""
+                    self.search_history = cfg.get('search_history', [])
         except Exception:
             pass
 
@@ -1406,7 +1555,8 @@ class ZetaApp:
                     'ignore_appdata': self.var_ignore_appdata.get() if hasattr(self, 'var_ignore_appdata') else self.ignore_appdata,
                     'ignore_cache': self.var_ignore_cache.get() if hasattr(self, 'var_ignore_cache') else self.ignore_cache,
                     'ignore_system': self.var_ignore_system.get() if hasattr(self, 'var_ignore_system') else self.ignore_system,
-                    'custom_ignore': ""
+                    'custom_ignore': "",
+                    'search_history': self.search_history
                 }, f, ensure_ascii=False, indent=4)
         except Exception:
             pass
@@ -1482,11 +1632,13 @@ class ZetaApp:
         self.rb_type_content.config(text=t['opt_type_content'])
         self.chk_exact.config(text=t['chk_exact'])
         self.chk_whole.config(text=t['chk_whole'])
+        self.chk_regex.config(text=t['chk_regex'])
         self.lbl_ignore.config(text=t['lbl_ignore'])
         self.chk_ignore_system.config(text=t['chk_system_trash'])
         self.lbl_ignore_custom.config(text=t['lbl_ignore_custom'])
         self.rb_mode_all.config(text=t['opt_mode_all'])
         self.rb_mode_any.config(text=t['opt_mode_any'])
+        self.btn_export.config(text=t['btn_export'])
         
         curr_status = self.var_status.get()
         if curr_status in (TRANSLATIONS['es']['status_ready'], TRANSLATIONS['en']['status_ready']):
@@ -1553,6 +1705,10 @@ class ZetaApp:
             self.tip_cb_file_type.text = t['tip_cb_file_type']
             if hasattr(self, 'tip_cb_date'):
                 self.tip_cb_date.text = t['tip_cb_date']
+            if hasattr(self, 'tip_chk_regex'):
+                self.tip_chk_regex.text = t['tip_chk_regex']
+            if hasattr(self, 'tip_export'):
+                self.tip_export.text = t['tip_export']
 
     def _apply_theme(self):
         theme_colors = {
