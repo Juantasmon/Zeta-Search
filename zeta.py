@@ -220,7 +220,13 @@ TRANSLATIONS = {
         'tip_chk_appdata': "Ignora la carpeta de datos de aplicaciones de Windows (AppData).",
         'tip_chk_cache': "Ignora carpetas que contengan la palabra 'cache'.",
         'tip_chk_system': "Ignora carpetas de sistema y de reciclaje ($recycle.bin, System Volume Information, .trash).",
-        'tip_ignore_custom': "Escribe nombres de carpetas a ignorar, separados por coma (ej: build,dist,temp)."
+        'tip_ignore_custom': "Escribe nombres de carpetas a ignorar, separados por coma (ej: build,dist,temp).",
+        'lbl_date': 'Fecha:',
+        'date_any': 'Cualquier fecha',
+        'date_today': 'Hoy',
+        'date_week': 'Esta semana',
+        'date_month': 'Este mes',
+        'tip_cb_date': 'Filtra los resultados por la fecha de última modificación.'
     },
     'en': {
         'title': 'Zeta',
@@ -289,7 +295,13 @@ TRANSLATIONS = {
         'tip_chk_appdata': "Ignores Windows application data folder (AppData).",
         'tip_chk_cache': "Ignores folders containing the word 'cache'.",
         'tip_chk_system': "Ignores system and trash folders ($recycle.bin, System Volume Information, .trash).",
-        'tip_ignore_custom': "Type folder names to ignore, separated by commas (e.g. build,dist,temp)."
+        'tip_ignore_custom': "Type folder names to ignore, separated by commas (e.g. build,dist,temp).",
+        'lbl_date': 'Date:',
+        'date_any': 'Any date',
+        'date_today': 'Today',
+        'date_week': 'This week',
+        'date_month': 'This month',
+        'tip_cb_date': 'Filters results by the last modification date.'
     }
 }
 
@@ -455,9 +467,9 @@ class SearchEngine:
                                         break
                                     continue
 
-                            # 15 MB native file size check
                             file_size = (fd.nFileSizeHigh * 4294967296) + fd.nFileSizeLow
-                            if file_size > MAX_SIZE:
+                            # 15 MB native file size check for content search only
+                            if text_only and file_size > MAX_SIZE:
                                 if not FindNextFileW(h, ctypes.byref(fd)):
                                     break
                                 continue
@@ -522,8 +534,8 @@ class SearchEngine:
                             except Exception:
                                 continue
                                 
-                            # 15 MB file size check
-                            if file_size > MAX_SIZE:
+                            # 15 MB file size check for content search only
+                            if text_only and file_size > MAX_SIZE:
                                 continue
                                 
                             # Extension filter check
@@ -550,7 +562,7 @@ class SearchEngine:
         yield from self._walk_files_scandir(root, text_only, extensions, blacklist)
 
     # ── búsqueda por nombre ───────────────────────────────────────────────────
-    def search_name(self, root, keywords, exact, extensions, match_cb, scan_cb, blacklist=None):
+    def search_name(self, root, keywords, exact, extensions, match_cb, scan_cb, blacklist=None, threshold=None):
         """scan_cb(path, scanned, total, matches) - total=-1 mientras recolecta"""
         self.cancel = False
         kws = [kw.lower() for kw in keywords] if exact else [_normalize_name(kw) for kw in keywords]
@@ -562,6 +574,13 @@ class SearchEngine:
             n += 1
             name = entry.name.lower() if exact else _normalize_name(entry.name)
             if all(k in name for k in kws):
+                if threshold is not None:
+                    try:
+                        mtime = os.path.getmtime(entry.path)
+                        if mtime < threshold:
+                            continue
+                    except Exception:
+                        continue
                 score = 100 if name == kws[0] else 10
                 match_cb((score, entry.path))
                 matches += 1
@@ -570,7 +589,7 @@ class SearchEngine:
         scan_cb('', n, n, matches)
 
     # ── búsqueda por contenido con multiprocessing ────────────────────────────
-    def search_content(self, root, keywords, mode_and, whole_word, extensions, match_cb, scan_cb, blacklist=None):
+    def search_content(self, root, keywords, mode_and, whole_word, extensions, match_cb, scan_cb, blacklist=None, threshold=None):
         """
         Fase 1: recolectar TODOS los archivos (rápido, Win32 / os.scandir).
         Fase 2: procesar con pool de forma dinámica a nivel de bytes puros.
@@ -584,6 +603,8 @@ class SearchEngine:
         for path, mtime, size in self._walk_files(root, text_only=True, extensions=extensions, blacklist=blacklist):
             if self.cancel:
                 return
+            if threshold is not None and mtime < threshold:
+                continue
             all_files.append((path, mtime, size))
             # Actualizar UI durante recolección cada 5000 archivos
             if len(all_files) % 5000 == 0:
@@ -741,6 +762,7 @@ class ZetaApp:
         self.theme = "light"
         self._load_settings()
         self.current_file_type_key = 'type_all'
+        self.current_date_filter_key = 'date_any'
 
         # Load custom theme image
         base = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
@@ -817,6 +839,13 @@ class ZetaApp:
         self.cb_file_type = ttk.Combobox(row1, textvariable=self.var_file_type, state="readonly", width=12)
         self.cb_file_type.pack(side=tk.LEFT, padx=4)
         self.cb_file_type.bind("<<ComboboxSelected>>", lambda e: self._on_file_type_change())
+
+        self.lbl_date = ttk.Label(row1, text="Fecha:")
+        self.lbl_date.pack(side=tk.LEFT, padx=4)
+        self.var_date = tk.StringVar()
+        self.cb_date = ttk.Combobox(row1, textvariable=self.var_date, state="readonly", width=14)
+        self.cb_date.pack(side=tk.LEFT, padx=4)
+        self.cb_date.bind("<<ComboboxSelected>>", lambda e: self._on_date_change())
 
         # Theme button (small, modern)
         self.btn_theme = ttk.Button(row1, command=self._toggle_theme)
@@ -913,6 +942,7 @@ class ZetaApp:
         self.tip_rb_mode_all = Hovertip(self.rb_mode_all, t['tip_rb_mode_all'], hover_delay=500)
         self.tip_rb_mode_any = Hovertip(self.rb_mode_any, t['tip_rb_mode_any'], hover_delay=500)
         self.tip_cb_file_type = Hovertip(self.cb_file_type, t['tip_cb_file_type'], hover_delay=500)
+        self.tip_cb_date = Hovertip(self.cb_date, t['tip_cb_date'], hover_delay=500)
 
         self.frame_preview = ttk.LabelFrame(paned, text="Vista Previa", padding=4)
         paned.add(self.frame_preview, weight=1)
@@ -1078,11 +1108,21 @@ class ZetaApp:
                 val = item.strip().lower()
                 if val:
                     blacklist.append(val)
+
+        # Calcular threshold de fecha
+        threshold = None
+        if self.current_date_filter_key == 'date_today':
+            threshold = time.time() - 24 * 3600
+        elif self.current_date_filter_key == 'date_week':
+            threshold = time.time() - 7 * 24 * 3600
+        elif self.current_date_filter_key == 'date_month':
+            threshold = time.time() - 30 * 24 * 3600
+
         self._save_settings()
-        threading.Thread(target=self._run, args=(base, kws, typ, exact, whole, mode_and, exts, tuple(blacklist)),
+        threading.Thread(target=self._run, args=(base, kws, typ, exact, whole, mode_and, exts, tuple(blacklist), threshold),
                          daemon=True).start()
 
-    def _run(self, base, kws, typ, exact, whole, mode_and, exts, blacklist):
+    def _run(self, base, kws, typ, exact, whole, mode_and, exts, blacklist, threshold):
         t = TRANSLATIONS[self.language]
         self.q.put(("status", t['status_searching']))
         try:
@@ -1090,9 +1130,9 @@ class ZetaApp:
             def scan_cb(p, sc, tot, mc): self.q.put(("scan", (p, sc, tot, mc)))
 
             if typ == "nombre":
-                self.engine.search_name(base, kws, exact, exts, match_cb, scan_cb, blacklist)
+                self.engine.search_name(base, kws, exact, exts, match_cb, scan_cb, blacklist, threshold)
             else:
-                self.engine.search_content(base, kws, mode_and, whole, exts, match_cb, scan_cb, blacklist)
+                self.engine.search_content(base, kws, mode_and, whole, exts, match_cb, scan_cb, blacklist, threshold)
             self.q.put(("done", not self.engine.cancel))
         except Exception as e:
             self.q.put(("status", f"Error: {e}"))
@@ -1304,6 +1344,14 @@ class ZetaApp:
         self._update_language()
         self._save_settings()
 
+    def _on_date_change(self):
+        t = TRANSLATIONS[self.language]
+        val = self.var_date.get()
+        for key in ('date_any', 'date_today', 'date_week', 'date_month'):
+            if t[key] == val:
+                self.current_date_filter_key = key
+                break
+
     def _on_file_type_change(self):
         t = TRANSLATIONS[self.language]
         val = self.var_file_type.get()
@@ -1406,6 +1454,19 @@ class ZetaApp:
         ]
         self.cb_file_type.config(values=file_type_values)
         self.var_file_type.set(t[self.current_file_type_key])
+
+        if not hasattr(self, 'current_date_filter_key'):
+            self.current_date_filter_key = 'date_any'
+
+        self.lbl_date.config(text=t['lbl_date'])
+        date_values = [
+            t['date_any'],
+            t['date_today'],
+            t['date_week'],
+            t['date_month']
+        ]
+        self.cb_date.config(values=date_values)
+        self.var_date.set(t[self.current_date_filter_key])
         
         if self.is_searching:
             curr_text = self.btn_search.cget('text')
@@ -1490,6 +1551,8 @@ class ZetaApp:
             self.tip_rb_mode_all.text = t['tip_rb_mode_all']
             self.tip_rb_mode_any.text = t['tip_rb_mode_any']
             self.tip_cb_file_type.text = t['tip_cb_file_type']
+            if hasattr(self, 'tip_cb_date'):
+                self.tip_cb_date.text = t['tip_cb_date']
 
     def _apply_theme(self):
         theme_colors = {
