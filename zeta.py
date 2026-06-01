@@ -230,7 +230,30 @@ TRANSLATIONS = {
         'chk_regex': 'Regex',
         'tip_chk_regex': 'Habilita la búsqueda por expresiones regulares.',
         'btn_export': 'Exportar',
-        'tip_export': 'Exporta la lista de resultados a un archivo CSV o TXT.'
+        'tip_export': 'Exporta la lista de resultados a un archivo CSV o TXT.',
+        'regex_guide_title': 'Guía Rápida de Regex',
+        'tip_regex_help': 'Muestra una guía rápida de expresiones regulares.',
+        'regex_guide_text': (
+            "SÍMBOLOS BÁSICOS:\n"
+            "•  . (Punto) -> Coincide con cualquier carácter.\n"
+            "•  * (Asterisco) -> Cero o más repeticiones de lo anterior.\n"
+            "•  ^ (Sombrerito) -> El texto debe EMPEZAR con esto.\n"
+            "•  $ (Signo Pesos) -> El texto debe TERMINAR con esto.\n"
+            "•  | (Barra) -> Funciona como un \"O\" lógico.\n\n"
+            "EJEMPLOS PRÁCTICOS EN ZETA:\n"
+            "1. Filtrar múltiples extensiones a la vez:\n"
+            "   \\.(docx|pdf|xlsx)$  -> Busca solo archivos PDF, Word o Excel.\n"
+            "2. Archivos que arranquen con un nombre fijo:\n"
+            "   ^Zeta.*\\.py$        -> Busca scripts que empiecen con \"Zeta\".\n"
+            "3. Buscar respaldos numéricos de 4 dígitos:\n"
+            "   backup_\\d{4}        -> Encuentra \"backup_2026\", ignora \"backup_final\".\n"
+            "4. Buscar tareas pendientes dentro del código (Solo Contenido):\n"
+            "   (?i)TODO:           -> Encuentra marcas \"todo:\" sin importar mayúsculas."
+        ),
+        'btn_close': 'Cerrar',
+        'chk_sound': 'Sonido',
+        'tip_chk_sound': 'Emite un sonido cuando finaliza la búsqueda.',
+        'status_folder_dropped': 'Carpeta base cambiada a: {path}'
     },
     'en': {
         'title': 'Zeta',
@@ -309,7 +332,30 @@ TRANSLATIONS = {
         'chk_regex': 'Regex',
         'tip_chk_regex': 'Enables regular expression search.',
         'btn_export': 'Export',
-        'tip_export': 'Exports the list of results to a CSV or TXT file.'
+        'tip_export': 'Exports the list of results to a CSV or TXT file.',
+        'regex_guide_title': 'Regex Quick Guide',
+        'tip_regex_help': 'Shows a quick guide for regular expressions.',
+        'regex_guide_text': (
+            "BASIC SYMBOLS:\n"
+            "•  . (Dot) -> Matches any character.\n"
+            "•  * (Asterisk) -> Zero or more repetitions of the preceding element.\n"
+            "•  ^ (Caret) -> The text must START with this.\n"
+            "•  $ (Dollar sign) -> The text must END with this.\n"
+            "•  | (Pipe) -> Works as a logical \"OR\".\n\n"
+            "PRACTICAL EXAMPLES IN ZETA:\n"
+            "1. Filter multiple extensions at once:\n"
+            "   \\.(docx|pdf|xlsx)$  -> Searches only PDF, Word or Excel files.\n"
+            "2. Files starting with a specific name:\n"
+            "   ^Zeta.*\\.py$        -> Searches for scripts starting with \"Zeta\".\n"
+            "3. Search for 4-digit numerical backups:\n"
+            "   backup_\\d{4}        -> Finds \"backup_2026\", ignores \"backup_final\".\n"
+            "4. Search for pending tasks in code (Content Only):\n"
+            "   (?i)TODO:           -> Finds \"todo:\" marks case-insensitively."
+        ),
+        'btn_close': 'Close',
+        'chk_sound': 'Sound',
+        'tip_chk_sound': 'Plays a sound when the search completes.',
+        'status_folder_dropped': 'Base folder changed to: {path}'
     }
 }
 
@@ -327,6 +373,259 @@ def make_regex_pattern(word: str) -> str:
     }
     norm = _normalize(word)
     return ''.join(char_map.get(c, re.escape(c)) for c in norm)
+
+def set_dark_titlebar(window, dark: bool):
+    if sys.platform != "win32":
+        return
+    import ctypes
+    try:
+        window.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+        if not hwnd:
+            hwnd = window.winfo_id()
+        value = ctypes.c_int(1 if dark else 0)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(value), ctypes.sizeof(value))
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(value), ctypes.sizeof(value))
+    except Exception:
+        pass
+
+def get_clipboard_files():
+    if sys.platform != "win32":
+        return []
+    CF_HDROP = 15
+    user32 = ctypes.windll.user32
+    shell32 = ctypes.windll.shell32
+    
+    try:
+        if not user32.IsClipboardFormatAvailable(CF_HDROP):
+            return []
+            
+        if not user32.OpenClipboard(None):
+            return []
+            
+        files = []
+        try:
+            h_drop = user32.GetClipboardData(CF_HDROP)
+            if h_drop:
+                num_files = shell32.DragQueryFileW(h_drop, 0xFFFFFFFF, None, 0)
+                for i in range(num_files):
+                    length = shell32.DragQueryFileW(h_drop, i, None, 0)
+                    buf = ctypes.create_unicode_buffer(length + 1)
+                    shell32.DragQueryFileW(h_drop, i, buf, length + 1)
+                    files.append(buf.value)
+        finally:
+            user32.CloseClipboard()
+        return files
+    except Exception:
+        return []
+
+# ── Drag & Drop nativo (overlay transparente en hilo Python dedicado) ──────────
+# Referencia global para evitar que el garbage collector elimine el hilo.
+_dnd_thread = None
+
+def setup_drag_and_drop(window, callback):
+    """
+    Crea una ventana Win32 overlay transparente en un hilo Python (threading.Thread)
+    dedicado, con su propio bucle de mensajes.
+    
+    Para evitar el congelamiento de la UI por problemas de hit-testing en diferentes hilos
+    y permitir la interacción normal con la ventana de Tkinter, el overlay se mantiene
+    completamente oculto (SW_HIDE). Se muestra dinámicamente cubriendo la ventana solo
+    cuando detectamos que el usuario está arrastrando archivos desde fuera (botón izquierdo
+    presionado y cursor dentro de los límites de la ventana sin haber iniciado el click dentro).
+    """
+    if sys.platform != 'win32':
+        return
+    global _dnd_thread
+
+    # Obtenemos el HWND nativo de Tkinter en el hilo principal
+    window.update_idletasks()
+    tk_hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+    if not tk_hwnd:
+        tk_hwnd = window.winfo_id()
+
+    _overlay_hwnd = [None]  # contenedor mutable para el HWND del overlay
+
+    # Bandera para indicar si el click empezó en la ventana de Tkinter
+    window.tkinter_mouse_down = False
+
+    def _on_press(event):
+        window.tkinter_mouse_down = True
+
+    def _on_release(event):
+        window.tkinter_mouse_down = False
+
+    window.bind_all("<ButtonPress-1>", _on_press)
+    window.bind_all("<ButtonRelease-1>", _on_release)
+
+    def _thread():
+        u32 = ctypes.windll.user32
+        s32 = ctypes.windll.shell32
+        k32 = ctypes.windll.kernel32
+
+        # Firmas explícitas para evitar truncamiento en 64 bits.
+        s32.DragAcceptFiles.restype  = None
+        s32.DragAcceptFiles.argtypes = [ctypes.c_void_p, ctypes.c_bool]
+        s32.DragFinish.restype       = None
+        s32.DragFinish.argtypes      = [ctypes.c_void_p]
+        s32.DragQueryFileW.restype   = ctypes.c_uint
+        s32.DragQueryFileW.argtypes  = [ctypes.c_void_p, ctypes.c_uint,
+                                        ctypes.c_wchar_p, ctypes.c_uint]
+
+        WM_DROPFILES      = 0x0233
+        WM_DESTROY        = 0x0002
+        WS_EX_LAYERED     = 0x00080000
+        WS_EX_NOACTIVATE  = 0x08000000
+        WS_EX_TOPMOST     = 0x00000008
+        WS_POPUP          = 0x80000000
+        LWA_ALPHA         = 0x00000002
+
+        WNDPROC = ctypes.WINFUNCTYPE(
+            ctypes.c_ssize_t,   # LRESULT
+            ctypes.c_void_p,    # HWND
+            ctypes.c_uint,      # msg
+            ctypes.c_size_t,    # wparam
+            ctypes.c_ssize_t,   # lparam
+        )
+
+        class WNDCLASSW(ctypes.Structure):
+            _fields_ = [
+                ('style',          ctypes.c_uint),
+                ('lpfnWndProc',    WNDPROC),
+                ('cbClsExtra',     ctypes.c_int),
+                ('cbWndExtra',     ctypes.c_int),
+                ('hInstance',      ctypes.c_void_p),
+                ('hIcon',          ctypes.c_void_p),
+                ('hCursor',        ctypes.c_void_p),
+                ('hbrBackground',  ctypes.c_void_p),
+                ('lpszMenuName',   ctypes.c_wchar_p),
+                ('lpszClassName',  ctypes.c_wchar_p),
+            ]
+
+        class MSG(ctypes.Structure):
+            _fields_ = [
+                ('hwnd',    ctypes.c_void_p),
+                ('message', ctypes.c_uint),
+                ('wParam',  ctypes.c_size_t),
+                ('lParam',  ctypes.c_ssize_t),
+                ('time',    ctypes.c_ulong),
+                ('pt',      ctypes.c_long * 2),
+            ]
+
+        def wnd_proc(hwnd, msg, wparam, lparam):
+            if msg == WM_DROPFILES:
+                try:
+                    h_drop = wparam
+                    num = s32.DragQueryFileW(h_drop, 0xFFFFFFFF, None, 0)
+                    path = None
+                    if num > 0:
+                        length = s32.DragQueryFileW(h_drop, 0, None, 0)
+                        buf = ctypes.create_unicode_buffer(length + 1)
+                        s32.DragQueryFileW(h_drop, 0, buf, length + 1)
+                        path = buf.value
+                    s32.DragFinish(h_drop)
+                    if path:
+                        window.after(0, lambda p=path: callback(p))
+                except Exception:
+                    pass
+                return 0
+            elif msg == WM_DESTROY:
+                u32.PostQuitMessage(0)
+                return 0
+            return u32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+        u32.DefWindowProcW.restype  = ctypes.c_ssize_t
+        u32.DefWindowProcW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint,
+            ctypes.c_size_t,
+            ctypes.c_ssize_t,
+        ]
+
+        wnd_proc_ref  = WNDPROC(wnd_proc)
+        h_instance    = k32.GetModuleHandleW(None)
+        class_name    = f"ZetaDnD{abs(id(window))}"
+
+        wc = WNDCLASSW()
+        wc.lpfnWndProc   = wnd_proc_ref
+        wc.hInstance     = h_instance
+        wc.lpszClassName = class_name
+        u32.RegisterClassW(ctypes.byref(wc))
+
+        # Creamos la ventana inicialmente oculta y sin tamaño
+        hwnd = u32.CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
+            class_name, None,
+            WS_POPUP,
+            0, 0, 1, 1,
+            None, None, h_instance, None
+        )
+        _overlay_hwnd[0] = hwnd
+
+        u32.SetLayeredWindowAttributes(hwnd, 0, 1, LWA_ALPHA)
+        u32.ShowWindow(hwnd, 0)  # SW_HIDE (inicialmente oculta)
+        s32.DragAcceptFiles(hwnd, True)
+
+        msg_obj = MSG()
+        while True:
+            ret = u32.GetMessageW(ctypes.byref(msg_obj), None, 0, 0)
+            if ret <= 0:
+                break
+            u32.TranslateMessage(ctypes.byref(msg_obj))
+            u32.DispatchMessageW(ctypes.byref(msg_obj))
+
+        u32.UnregisterClassW(class_name, h_instance)
+
+    class POINT(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+    class RECT(ctypes.Structure):
+        _fields_ = [
+            ('left',   ctypes.c_long), ('top',    ctypes.c_long),
+            ('right',  ctypes.c_long), ('bottom', ctypes.c_long),
+        ]
+
+    def check_drag():
+        hwnd = _overlay_hwnd[0]
+        if not hwnd:
+            window.after(100, check_drag)
+            return
+        try:
+            # 1. Comprobar si el botón izquierdo del ratón está físicamente presionado
+            is_lbutton_down = (ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000) != 0
+
+            # 2. Comprobar si el cursor está dentro del área de la ventana principal
+            cursor_pos = POINT()
+            ctypes.windll.user32.GetCursorPos(ctypes.byref(cursor_pos))
+
+            rect = RECT()
+            ctypes.windll.user32.GetWindowRect(ctypes.c_void_p(tk_hwnd), ctypes.byref(rect))
+
+            is_over = (rect.left <= cursor_pos.x <= rect.right and
+                       rect.top <= cursor_pos.y <= rect.bottom)
+
+            # Si el mouse está abajo, el cursor está dentro y el click no se inició en Tkinter,
+            # significa que están arrastrando algo desde fuera. Mostramos el overlay.
+            if is_lbutton_down and is_over and not window.tkinter_mouse_down:
+                ctypes.windll.user32.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE
+                ctypes.windll.user32.SetWindowPos(
+                    hwnd, ctypes.c_void_p(-1),  # HWND_TOPMOST
+                    rect.left, rect.top,
+                    rect.right - rect.left,
+                    rect.bottom - rect.top,
+                    0x0010  # SWP_NOACTIVATE
+                )
+            else:
+                # Si no, mantenemos el overlay oculto para no entorpecer la UI de Tkinter
+                ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
+        except Exception:
+            pass
+        window.after(100, check_drag)
+
+    window.after(100, check_drag)
+
+    _dnd_thread = threading.Thread(target=_thread, daemon=True)
+    _dnd_thread.start()
 
 # ── pool-worker (debe ser pickleable = nivel de módulo) ───────────────────────
 def _search_chunk(args):
@@ -814,6 +1113,7 @@ class ZetaApp:
         self.language = "es"
         self.theme = "light"
         self._load_settings()
+        self.var_sound = tk.BooleanVar(value=self.sound)
         self.current_file_type_key = 'type_all'
         self.current_date_filter_key = 'date_any'
 
@@ -826,6 +1126,8 @@ class ZetaApp:
 
         self._build_ui()
         self.root.after(80, self._poll_queue)
+        # Drag & Drop: activar después de que la UI esté construida.
+        self.root.after(500, lambda: setup_drag_and_drop(self.root, self._on_folder_drop))
 
     # ── UI ────────────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -838,7 +1140,10 @@ class ZetaApp:
         self.lbl_base_folder = ttk.Label(top, text="Carpeta Base:", font=("Segoe UI", 10, "bold"))
         self.lbl_base_folder.grid(row=0, column=0, sticky=tk.W)
         self.var_path = tk.StringVar()
-        ttk.Entry(top, textvariable=self.var_path, font=("Segoe UI", 10)).grid(row=0, column=1, sticky=tk.EW, padx=8)
+        self.ent_path = ttk.Entry(top, textvariable=self.var_path, font=("Segoe UI", 10))
+        self.ent_path.grid(row=0, column=1, sticky=tk.EW, padx=8)
+        self.ent_path.bind("<Control-v>", self._on_paste)
+        self.ent_path.bind("<Control-V>", self._on_paste)
         self.btn_browse = ttk.Button(top, text="Examinar…", command=self._browse)
         self.btn_browse.grid(row=0, column=2)
         top.columnconfigure(1, weight=1)
@@ -882,6 +1187,9 @@ class ZetaApp:
         self.var_regex = tk.BooleanVar()
         self.chk_regex = ttk.Checkbutton(row1, text="Regex", variable=self.var_regex)
         self.chk_regex.pack(side=tk.LEFT, padx=5)
+        self.lbl_regex_help = ttk.Label(row1, text="ℹ️", cursor="hand2")
+        self.lbl_regex_help.pack(side=tk.LEFT, padx=(0, 5))
+        self.lbl_regex_help.bind("<Button-1>", lambda e: self._show_regex_guide())
 
         ttk.Separator(row1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
 
@@ -957,6 +1265,8 @@ class ZetaApp:
         ttk.Label(sb, textvariable=self.var_status, style="Status.TLabel").pack(side=tk.LEFT, padx=4)
         self.btn_export = ttk.Button(sb, text="Exportar", command=self._export, style="TButton")
         self.btn_export.pack(side=tk.LEFT, padx=15)
+        self.chk_sound = ttk.Checkbutton(sb, text="Sonido", variable=self.var_sound)
+        self.chk_sound.pack(side=tk.LEFT, padx=15)
         self.var_stats = tk.StringVar(value="")
         ttk.Label(sb, textvariable=self.var_stats, style="Stats.TLabel").pack(side=tk.RIGHT, padx=8)
 
@@ -1005,7 +1315,9 @@ class ZetaApp:
         self.tip_cb_file_type = Hovertip(self.cb_file_type, t['tip_cb_file_type'], hover_delay=500)
         self.tip_cb_date = Hovertip(self.cb_date, t['tip_cb_date'], hover_delay=500)
         self.tip_chk_regex = Hovertip(self.chk_regex, t['tip_chk_regex'], hover_delay=500)
+        self.tip_regex_help = Hovertip(self.lbl_regex_help, t['tip_regex_help'], hover_delay=500)
         self.tip_export = Hovertip(self.btn_export, t['tip_export'], hover_delay=500)
+        self.tip_chk_sound = Hovertip(self.chk_sound, t['tip_chk_sound'], hover_delay=500)
 
         self.frame_preview = ttk.LabelFrame(paned, text="Vista Previa", padding=4)
         paned.add(self.frame_preview, weight=1)
@@ -1043,6 +1355,25 @@ class ZetaApp:
     def _browse(self):
         d = filedialog.askdirectory()
         if d: self.var_path.set(d)
+
+    def _on_folder_drop(self, path):
+        if not path:
+            return
+        if os.path.isfile(path):
+            folder = os.path.dirname(path)
+        else:
+            folder = path
+        if os.path.isdir(folder):
+            self.var_path.set(folder)
+            t = TRANSLATIONS[self.language]
+            self.var_status.set(t['status_folder_dropped'].format(path=os.path.basename(folder)))
+
+    def _on_paste(self, event=None):
+        files = get_clipboard_files()
+        if files:
+            self._on_folder_drop(files[0])
+            return "break"
+        return None
 
     def _get_sel_path(self):
         sel = self.tree.selection()
@@ -1239,6 +1570,13 @@ class ZetaApp:
         else:
             self.var_status.set(t['status_results'].format(count=m, time=elapsed))
         self.var_stats.set(t['stats_done'].format(total=tot, scanned=sc, matches=m, time=elapsed))
+
+        if completed and self.var_sound.get() and elapsed > 3.0:
+            try:
+                import winsound
+                winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            except Exception:
+                pass
 
     # ── preview ───────────────────────────────────────────────────────────────
     def _reset_nav(self):
@@ -1525,6 +1863,7 @@ class ZetaApp:
         self.ignore_system = True
         self.custom_ignore = ""
         self.search_history = []
+        self.sound = True
         try:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r', encoding='utf-8') as f:
@@ -1538,6 +1877,7 @@ class ZetaApp:
                     self.ignore_system = cfg.get('ignore_system', True)
                     self.custom_ignore = ""
                     self.search_history = cfg.get('search_history', [])
+                    self.sound = cfg.get('sound', True)
         except Exception:
             pass
 
@@ -1556,7 +1896,8 @@ class ZetaApp:
                     'ignore_cache': self.var_ignore_cache.get() if hasattr(self, 'var_ignore_cache') else self.ignore_cache,
                     'ignore_system': self.var_ignore_system.get() if hasattr(self, 'var_ignore_system') else self.ignore_system,
                     'custom_ignore': "",
-                    'search_history': self.search_history
+                    'search_history': self.search_history,
+                    'sound': self.var_sound.get() if hasattr(self, 'var_sound') else self.sound
                 }, f, ensure_ascii=False, indent=4)
         except Exception:
             pass
@@ -1639,6 +1980,7 @@ class ZetaApp:
         self.rb_mode_all.config(text=t['opt_mode_all'])
         self.rb_mode_any.config(text=t['opt_mode_any'])
         self.btn_export.config(text=t['btn_export'])
+        self.chk_sound.config(text=t['chk_sound'])
         
         curr_status = self.var_status.get()
         if curr_status in (TRANSLATIONS['es']['status_ready'], TRANSLATIONS['en']['status_ready']):
@@ -1706,9 +2048,89 @@ class ZetaApp:
             if hasattr(self, 'tip_cb_date'):
                 self.tip_cb_date.text = t['tip_cb_date']
             if hasattr(self, 'tip_chk_regex'):
+                self.chk_regex.config(text=t['chk_regex'])
                 self.tip_chk_regex.text = t['tip_chk_regex']
+            if hasattr(self, 'tip_regex_help'):
+                self.tip_regex_help.text = t['tip_regex_help']
             if hasattr(self, 'tip_export'):
                 self.tip_export.text = t['tip_export']
+            if hasattr(self, 'tip_chk_sound'):
+                self.tip_chk_sound.text = t['tip_chk_sound']
+
+    def _show_regex_guide(self):
+        t = TRANSLATIONS[self.language]
+        top = tk.Toplevel(self.root)
+        top.title(t['regex_guide_title'])
+        top.geometry("550x400")
+        top.minsize(450, 320)
+        top.transient(self.root)
+        top.grab_set()
+
+        # Set program icon
+        base = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+        ico = os.path.join(base, "buscador.ico")
+        if os.path.exists(ico):
+            try:
+                top.iconbitmap(ico)
+            except Exception:
+                pass
+
+        # Center relative to root
+        self.root.update_idletasks()
+        rx = self.root.winfo_x()
+        ry = self.root.winfo_y()
+        rw = self.root.winfo_width()
+        rh = self.root.winfo_height()
+
+        tx = rx + (rw - 550) // 2
+        ty = ry + (rh - 400) // 2
+        top.geometry(f"550x400+{max(0, tx)}+{max(0, ty)}")
+
+        # Theme colors dictionary
+        theme_colors = {
+            'light': {
+                'bg': '#f3f4f6',
+                'fg': '#1f2937',
+                'field_bg': '#ffffff',
+            },
+            'dark': {
+                'bg': '#1f2937',
+                'fg': '#f9fafb',
+                'field_bg': '#111827',
+            }
+        }
+        c = theme_colors[self.theme]
+        top.config(bg=c['bg'])
+        set_dark_titlebar(top, self.theme == 'dark')
+
+        # Frame for Text + Scrollbar
+        frame = ttk.Frame(top, padding=10)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        txt = tk.Text(frame, wrap=tk.WORD, font=("Consolas", 10), padx=8, pady=8)
+        sb = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=txt.yview)
+        txt.configure(yscrollcommand=sb.set)
+
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Style Text widget based on theme
+        txt.config(
+            bg=c['field_bg'],
+            fg=c['fg'],
+            insertbackground=c['fg'],
+            selectbackground=c['bg'],
+            selectforeground=c['fg']
+        )
+
+        txt.insert(tk.END, t['regex_guide_text'])
+        txt.config(state=tk.DISABLED)
+
+        # Bottom Frame for Close Button
+        btn_frame = ttk.Frame(top, padding=(0, 0, 0, 10))
+        btn_frame.pack(fill=tk.X)
+        btn_close = ttk.Button(btn_frame, text=t['btn_close'], command=top.destroy)
+        btn_close.pack(side=tk.BOTTOM)
 
     def _apply_theme(self):
         theme_colors = {
@@ -1751,6 +2173,7 @@ class ZetaApp:
         c = theme_colors[self.theme]
         
         self.root.config(bg=c['bg'])
+        set_dark_titlebar(self.root, self.theme == 'dark')
         self.txt.config(
             bg=c['field_bg'], 
             fg=c['fg'], 
@@ -1800,6 +2223,19 @@ class ZetaApp:
         self.style.map('TCombobox', 
             fieldbackground=[('readonly', c['field_bg'])], 
             foreground=[('readonly', c['fg'])],
+            arrowcolor=[('active', c['accent'])]
+        )
+
+        self.style.configure('TScrollbar',
+            troughcolor=c['bg'],
+            background=c['btn_bg'],
+            bordercolor=c['border'],
+            arrowcolor=c['fg'],
+            lightcolor=c['bg'],
+            darkcolor=c['bg']
+        )
+        self.style.map('TScrollbar',
+            background=[('active', c['btn_active']), ('disabled', c['bg'])],
             arrowcolor=[('active', c['accent'])]
         )
         
