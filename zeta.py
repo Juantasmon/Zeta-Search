@@ -395,6 +395,14 @@ class SearchEngine:
                                 else:
                                     stack.append(full_path)
                         else:
+                            # Blacklist check for files
+                            if blacklist:
+                                full_path_lower = full_path.lower()
+                                if any(kw in full_path_lower for kw in blacklist):
+                                    if not FindNextFileW(h, ctypes.byref(fd)):
+                                        break
+                                    continue
+
                             # 15 MB native file size check
                             file_size = (fd.nFileSizeHigh * 4294967296) + fd.nFileSizeLow
                             if file_size > MAX_SIZE:
@@ -449,6 +457,12 @@ class SearchEngine:
                                 else:
                                     stack.append(e.path)
                         else:
+                            # Blacklist check for files
+                            if blacklist:
+                                full_path_lower = e.path.lower()
+                                if any(kw in full_path_lower for kw in blacklist):
+                                    continue
+
                             try:
                                 stat = e.stat(follow_symlinks=False)
                                 file_size = stat.st_size
@@ -1236,7 +1250,7 @@ class ZetaApp:
                     self.ignore_appdata = cfg.get('ignore_appdata', True)
                     self.ignore_cache = cfg.get('ignore_cache', True)
                     self.ignore_system = cfg.get('ignore_system', True)
-                    self.custom_ignore = cfg.get('custom_ignore', "")
+                    self.custom_ignore = ""
         except Exception:
             pass
 
@@ -1254,7 +1268,7 @@ class ZetaApp:
                     'ignore_appdata': self.var_ignore_appdata.get() if hasattr(self, 'var_ignore_appdata') else self.ignore_appdata,
                     'ignore_cache': self.var_ignore_cache.get() if hasattr(self, 'var_ignore_cache') else self.ignore_cache,
                     'ignore_system': self.var_ignore_system.get() if hasattr(self, 'var_ignore_system') else self.ignore_system,
-                    'custom_ignore': self.var_custom_ignore.get() if hasattr(self, 'var_custom_ignore') else self.custom_ignore
+                    'custom_ignore': ""
                 }, f, ensure_ascii=False, indent=4)
         except Exception:
             pass
