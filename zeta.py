@@ -21,6 +21,49 @@ import ctypes
 from ctypes import wintypes
 from collections import namedtuple
 
+try:
+    import pypdf
+except ImportError:
+    pypdf = None
+
+try:
+    import docx
+except ImportError:
+    docx = None
+
+def _extract_pdf_text(path):
+    if pypdf is None:
+        return ""
+    text = []
+    try:
+        with open(path, "rb") as f:
+            reader = pypdf.PdfReader(f)
+            for page in reader.pages:
+                t = page.extract_text()
+                if t:
+                    text.append(t)
+    except Exception:
+        pass
+    return "\n".join(text)
+
+def _extract_docx_text(path):
+    if docx is None:
+        return ""
+    text = []
+    try:
+        doc = docx.Document(path)
+        for paragraph in doc.paragraphs:
+            if paragraph.text:
+                text.append(paragraph.text)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text:
+                        text.append(cell.text)
+    except Exception:
+        pass
+    return "\n".join(text)
+
 # Estructura ligera para simular os.DirEntry en la búsqueda por nombre
 FileEntry = namedtuple('FileEntry', ['name', 'path'])
 
@@ -93,7 +136,7 @@ BLACKLIST_DIRS = ("node_modules", ".git", "appdata", "cache", "$recycle.bin", "s
 
 FILE_TYPES = {
     'type_all': None,
-    'type_text': ('.txt', '.log', '.md', '.py', '.js', '.json', '.xml', '.html', '.css', '.cpp', '.c', '.h', '.java'),
+    'type_text': ('.txt', '.log', '.md', '.py', '.js', '.json', '.xml', '.html', '.css', '.cpp', '.c', '.h', '.java', '.docx', '.pdf'),
     'type_images': ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.svg'),
     'type_media': ('.mp3', '.wav', '.flac', '.mp4', '.mkv', '.avi', '.mov'),
     'type_sys': ('.exe', '.msi', '.bat', '.cmd', '.dll', '.sys'),
@@ -284,12 +327,21 @@ def _search_chunk(args):
         try:
             if size == 0 or size > MAX_SIZE:
                 continue
-            with open(path, 'rb') as f:
-                head = f.read(1024)
-                if b'\x00' in head:
-                    continue
-                rest = f.read()
-                raw = head + rest
+
+            ext = os.path.splitext(path)[1].lower()
+            if ext == '.pdf' and pypdf is not None:
+                text_str = _extract_pdf_text(path)
+                raw = text_str.encode('utf-8', errors='ignore')
+            elif ext == '.docx' and docx is not None:
+                text_str = _extract_docx_text(path)
+                raw = text_str.encode('utf-8', errors='ignore')
+            else:
+                with open(path, 'rb') as f:
+                    head = f.read(1024)
+                    if b'\x00' in head:
+                        continue
+                    rest = f.read()
+                    raw = head + rest
                 
             normalized = _normalize_bytes(raw)
             normalized_str = normalized.decode('latin-1', errors='ignore')
@@ -928,6 +980,9 @@ class ZetaApp:
         try:
             while True:
                 kind, data = self.q.get_nowait()
+                if not self.is_searching:
+                    if kind not in ("preview_raw", "preview_hl"):
+                        continue
                 if kind == "match":
                     score, path = data
                     if self.matches_shown < 10000:
@@ -960,8 +1015,22 @@ class ZetaApp:
     def _start(self):
         if self.is_searching:
             self.engine.stop()
+            # Clear queue to discard any pending messages
+            while not self.q.empty():
+                try:
+                    self.q.get_nowait()
+                except queue.Empty:
+                    break
+            self.is_searching = False
             t = TRANSLATIONS[self.language]
-            self.btn_search.config(text=t['btn_canceling'], state=tk.DISABLED)
+            self.btn_search.config(text=t['btn_search'], state=tk.NORMAL)
+            self.var_status.set(t['status_canceled'])
+            self.var_stats.set(t['stats_done'].format(
+                total=self.stats.get('total', 0), 
+                scanned=self.stats.get('scanned', 0), 
+                matches=self.stats.get('matches', 0), 
+                time=time.time() - self.start_time
+            ))
             return
 
         base = self.var_path.get().strip()
@@ -1135,6 +1204,27 @@ class ZetaApp:
 
             if path.lower().endswith(('.dll','.exe','.pyc','.png','.jpg','.mp3','.zip','.rar')):
                 self.q.put(("preview_raw", t['preview_binary'].format(name=os.path.basename(path)))); return
+
+            ext = os.path.splitext(path)[1].lower()
+            kws = [k.strip() for k in self.last_query.split() if k.strip()] if self.last_query else []
+            if ext == '.pdf' and pypdf is not None:
+                content = _extract_pdf_text(path)
+                suffix = t['preview_truncated'] if len(content) > 50000 else ""
+                content = content[:50000]
+                if kws:
+                    self.q.put(("preview_hl", {"content": content + suffix, "keywords": kws, "prefix": ""}))
+                else:
+                    self.q.put(("preview_raw", content + suffix))
+                return
+            elif ext == '.docx' and docx is not None:
+                content = _extract_docx_text(path)
+                suffix = t['preview_truncated'] if len(content) > 50000 else ""
+                content = content[:50000]
+                if kws:
+                    self.q.put(("preview_hl", {"content": content + suffix, "keywords": kws, "prefix": ""}))
+                else:
+                    self.q.put(("preview_raw", content + suffix))
+                return
 
             size = os.path.getsize(path)
             kws  = [k.strip() for k in self.last_query.split() if k.strip()] if self.last_query else []
