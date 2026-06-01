@@ -3,6 +3,49 @@ import os
 import re
 import string
 
+try:
+    import pypdf
+except ImportError:
+    pypdf = None
+
+try:
+    import docx
+except ImportError:
+    docx = None
+
+def _extract_pdf_text(path):
+    if pypdf is None:
+        return ""
+    text = []
+    try:
+        with open(path, "rb") as f:
+            reader = pypdf.PdfReader(f)
+            for page in reader.pages:
+                t = page.extract_text()
+                if t:
+                    text.append(t)
+    except Exception:
+        pass
+    return "\n".join(text)
+
+def _extract_docx_text(path):
+    if docx is None:
+        return ""
+    text = []
+    try:
+        doc = docx.Document(path)
+        for paragraph in doc.paragraphs:
+            if paragraph.text:
+                text.append(paragraph.text)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text:
+                        text.append(cell.text)
+    except Exception:
+        pass
+    return "\n".join(text)
+
 BINARY_EXT = ('.png','.jpg','.jpeg','.gif','.bmp','.ico','.dll','.exe','.so','.dylib',
               '.wav','.ogg','.mp3','.flac','.zip','.rar','.7z','.tar','.gz','.bz2',
               '.mp4','.avi','.mkv','.mov','.pdf','.doc','.docx','.xls','.xlsx',
@@ -51,12 +94,21 @@ def search_chunk(args):
         try:
             if size == 0 or size > MAX_SIZE:
                 continue
-            with open(path, 'rb') as f:
-                head = f.read(1024)
-                if b'\x00' in head:
-                    continue
-                rest = f.read()
-                raw = head + rest
+
+            ext = os.path.splitext(path)[1].lower()
+            if ext == '.pdf' and pypdf is not None:
+                text_str = _extract_pdf_text(path)
+                raw = text_str.encode('utf-8', errors='ignore')
+            elif ext == '.docx' and docx is not None:
+                text_str = _extract_docx_text(path)
+                raw = text_str.encode('utf-8', errors='ignore')
+            else:
+                with open(path, 'rb') as f:
+                    head = f.read(1024)
+                    if b'\x00' in head:
+                        continue
+                    rest = f.read()
+                    raw = head + rest
                 
             normalized = _normalize_bytes(raw)
             normalized_str = normalized.decode('latin-1', errors='ignore')
