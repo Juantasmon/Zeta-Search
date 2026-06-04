@@ -22,6 +22,23 @@ from ctypes import wintypes
 from collections import namedtuple
 
 try:
+    version_dll = ctypes.windll.version
+    GetFileVersionInfoSizeW = version_dll.GetFileVersionInfoSizeW
+    GetFileVersionInfoSizeW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD)]
+    GetFileVersionInfoSizeW.restype = wintypes.DWORD
+
+    GetFileVersionInfoW = version_dll.GetFileVersionInfoW
+    GetFileVersionInfoW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID]
+    GetFileVersionInfoW.restype = wintypes.BOOL
+
+    VerQueryValueW = version_dll.VerQueryValueW
+    VerQueryValueW.argtypes = [wintypes.LPCVOID, wintypes.LPCWSTR, ctypes.POINTER(wintypes.LPVOID), ctypes.POINTER(wintypes.UINT)]
+    VerQueryValueW.restype = wintypes.BOOL
+except Exception:
+    version_dll = None
+
+
+try:
     import pypdf
 except ImportError:
     pypdf = None
@@ -337,7 +354,15 @@ TRANSLATIONS = {
         'btn_close': 'Cerrar',
         'chk_sound': 'Sonido',
         'tip_chk_sound': 'Emite un sonido cuando finaliza la búsqueda.',
-        'status_folder_dropped': 'Carpeta base cambiada a: {path}'
+        'status_folder_dropped': 'Carpeta base cambiada a: {path}',
+        'menu_add_star': 'Añadir Estrella',
+        'menu_remove_star': 'Quitar Estrella',
+        'menu_color_tags': 'Etiquetas de Color',
+        'menu_remove_tag': 'Quitar Etiqueta',
+        'menu_remove_bookmark': 'Eliminar Marcador',
+        'tab_search': 'Búsqueda',
+        'tab_bookmarks': 'Marcadores',
+        'tree_no_bookmarks': '❌ Sin marcadores'
     },
     'en': {
         'title': 'Zeta',
@@ -439,7 +464,15 @@ TRANSLATIONS = {
         'btn_close': 'Close',
         'chk_sound': 'Sound',
         'tip_chk_sound': 'Plays a sound when the search completes.',
-        'status_folder_dropped': 'Base folder changed to: {path}'
+        'status_folder_dropped': 'Base folder changed to: {path}',
+        'menu_add_star': 'Add Star',
+        'menu_remove_star': 'Remove Star',
+        'menu_color_tags': 'Color Tags',
+        'menu_remove_tag': 'Remove Tag',
+        'menu_remove_bookmark': 'Remove Bookmark',
+        'tab_search': 'Search',
+        'tab_bookmarks': 'Bookmarks',
+        'tree_no_bookmarks': '❌ No bookmarks'
     }
 }
 
@@ -1220,6 +1253,7 @@ class ZetaApp:
         self._load_theme_images()
 
         self._build_ui()
+        self._refresh_bookmarks_tree()
         self.root.after(80, self._poll_queue)
         # Drag & Drop: activar después de que la UI esté construida.
         self.root.after(500, lambda: setup_drag_and_drop(self.root, self._on_folder_drop))
@@ -1370,27 +1404,51 @@ class ZetaApp:
         paned.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 6))
 
         left = ttk.Frame(paned)
-        paned.add(left, weight=2)
+        paned.add(left, weight=1)
+
+        self.notebook = ttk.Notebook(left)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+
+        self.tab_search = ttk.Frame(self.notebook)
+        self.tab_bookmarks = ttk.Frame(self.notebook)
+
+        self.notebook.add(self.tab_search, text="Búsqueda")
+        self.notebook.add(self.tab_bookmarks, text="Marcadores")
         
-        # Tiny header frame for the "❓" label
-        left_top = ttk.Frame(left)
+        # Tiny header frame for the "❓" label in search tab
+        left_top = ttk.Frame(self.tab_search)
         left_top.pack(fill=tk.X, side=tk.TOP, pady=(0, 2))
         
         self.lbl_help = ttk.Label(left_top, text="❓", cursor="hand2", font=("Segoe UI", 10))
         self.lbl_help.pack(side=tk.LEFT, padx=5)
 
         cols = ("nombre","ruta","tipo")
-        self.tree = ttk.Treeview(left, columns=cols, show="headings")
+        
+        # Búsqueda tree
+        self.tree = ttk.Treeview(self.tab_search, columns=cols, show="headings")
         for c, w, t, stretch in (("nombre", 150, "Nombre", False),
                                  ("ruta", 250, "Ruta", True),
                                  ("tipo", 70, "Tipo", False)):
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w, anchor=tk.W, stretch=stretch)
         self.tree.tag_configure("noresult", foreground="red")
-        sb_tree = ttk.Scrollbar(left, orient=tk.VERTICAL, command=self.tree.yview)
+        sb_tree = ttk.Scrollbar(self.tab_search, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb_tree.set)
         sb_tree.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Marcadores tree
+        self.tree_bookmarks = ttk.Treeview(self.tab_bookmarks, columns=cols, show="headings")
+        for c, w, t, stretch in (("nombre", 150, "Nombre", False),
+                                 ("ruta", 250, "Ruta", True),
+                                 ("tipo", 70, "Tipo", False)):
+            self.tree_bookmarks.heading(c, text=t)
+            self.tree_bookmarks.column(c, width=w, anchor=tk.W, stretch=stretch)
+        self.tree_bookmarks.tag_configure("noresult", foreground="red")
+        sb_tree_bookmarks = ttk.Scrollbar(self.tab_bookmarks, orient=tk.VERTICAL, command=self.tree_bookmarks.yview)
+        self.tree_bookmarks.configure(yscrollcommand=sb_tree_bookmarks.set)
+        sb_tree_bookmarks.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree_bookmarks.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Initialize Hovertips for options and help icon
         t = TRANSLATIONS[self.language]
@@ -1437,11 +1495,11 @@ class ZetaApp:
         self.tree.bind("<Double-1>", self._on_double_click)
         self.tree.bind("<Button-3>", self._ctx_menu)
 
-        cm = tk.Menu(self.root, tearoff=0)
-        cm.add_command(label="Abrir",           command=self._open)
-        cm.add_command(label="Abrir ubicación", command=self._open_loc)
-        cm.add_command(label="Copiar ruta",     command=self._copy_path)
-        self.cm = cm
+        self.tree_bookmarks.bind("<<TreeviewSelect>>", self._on_select)
+        self.tree_bookmarks.bind("<Double-1>", self._on_double_click)
+        self.tree_bookmarks.bind("<Button-3>", self._ctx_menu)
+
+        self.cm = tk.Menu(self.root, tearoff=0)
 
         self._apply_theme()
         self._update_language()
@@ -1471,9 +1529,14 @@ class ZetaApp:
         return None
 
     def _get_sel_path(self):
-        sel = self.tree.selection()
+        try:
+            active_tab = self.notebook.index(self.notebook.select())
+        except Exception:
+            active_tab = 0
+        tree = self.tree if active_tab == 0 else self.tree_bookmarks
+        sel = tree.selection()
         if not sel: return None
-        v = self.tree.item(sel[0])['values']
+        v = tree.item(sel[0])['values']
         return v[1] if v and v[1] else None
 
     # ── animación en status bar ───────────────────────────────────────────────
@@ -1506,9 +1569,15 @@ class ZetaApp:
                     score, path = data
                     if self.matches_shown < 10000:
                         t = TRANSLATIONS[self.language]
+                        display_name = self._get_display_name(path)
+                        tags = ()
+                        bookmark = self.bookmarks.get(path)
+                        if bookmark and bookmark.get("color"):
+                            tags = (f"tag_{bookmark['color']}",)
                         self.tree.insert("", tk.END,
-                            values=(os.path.basename(path), path,
-                                    t['type_folder'] if os.path.isdir(path) else t['type_file']))
+                            values=(display_name, path,
+                                    t['type_folder'] if os.path.isdir(path) else t['type_file']),
+                            tags=tags)
                         self.matches_shown += 1
                 elif kind == "scan":
                     path, sc, tot, mc = data
@@ -1764,10 +1833,23 @@ class ZetaApp:
                 self.q.put(("preview_image", path))
                 return
 
-            if path.lower().endswith(('.dll','.exe','.pyc','.mp3','.zip','.rar')):
-                self.q.put(("preview_raw", t['preview_binary'].format(name=os.path.basename(path)))); return
+            if ext in ('.exe', '.dll', '.sys', '.msi', '.bat', '.cmd'):
+                self._load_exe_sys_preview(path)
+                return
 
-            ext = os.path.splitext(path)[1].lower()
+            if ext in ('.pyc', '.mp3', '.zip', '.rar', '.7z', '.db', '.sqlite', '.lnk', '.bin', '.dat', '.tar', '.gz', '.bz2', '.o', '.obj'):
+                self._load_other_binary_preview(path)
+                return
+
+            # Check for binary content by reading head
+            try:
+                with open(path, 'rb') as f:
+                    head = f.read(1024)
+                if b'\x00' in head:
+                    self._load_other_binary_preview(path)
+                    return
+            except Exception:
+                pass
             kws = [k.strip() for k in self.last_query.split() if k.strip()] if self.last_query else []
             if ext == '.pdf' and pypdf is not None:
                 content = _extract_pdf_text(path)
@@ -1824,22 +1906,169 @@ class ZetaApp:
 
     # ── context menu / open ───────────────────────────────────────────────────
     def _ctx_menu(self, e):
-        row = self.tree.identify_row(e.y)
+        try:
+            active_tab = self.notebook.index(self.notebook.select())
+        except Exception:
+            active_tab = 0
+        tree = self.tree if active_tab == 0 else self.tree_bookmarks
+        row = tree.identify_row(e.y)
         if row:
-            self.tree.selection_set(row)
-            self.cm.tk_popup(e.x_root, e.y_root)
+            tree.selection_set(row)
+            path = self._get_sel_path()
+            if path:
+                self._rebuild_ctx_menu(path)
+                self.cm.tk_popup(e.x_root, e.y_root)
 
     def _on_double_click(self, event):
-        region = self.tree.identify_region(event.x, event.y)
+        try:
+            active_tab = self.notebook.index(self.notebook.select())
+        except Exception:
+            active_tab = 0
+        tree = self.tree if active_tab == 0 else self.tree_bookmarks
+        region = tree.identify_region(event.x, event.y)
         if region != "cell" and region != "tree":
             return
-        row = self.tree.identify_row(event.y)
+        row = tree.identify_row(event.y)
         if not row:
             return
-        item = self.tree.item(row)
+        item = tree.item(row)
         if item and "noresult" in item.get("tags", ()):
             return
         self._open()
+
+    def _get_display_name(self, path):
+        basename = os.path.basename(path)
+        bookmark = self.bookmarks.get(path)
+        if bookmark:
+            prefix = ""
+            if bookmark.get("star"):
+                prefix += "⭐ "
+            color = bookmark.get("color")
+            if color:
+                color_emojis = {
+                    "red": "🔴 ", "orange": "🟠 ", "yellow": "🟡 ", 
+                    "green": "🟢 ", "blue": "🔵 ", "purple": "🟣 ", "gray": "⚫ "
+                }
+                prefix += color_emojis.get(color, "")
+            return prefix + basename
+        return basename
+
+    def _refresh_bookmarks_tree(self):
+        for item in self.tree_bookmarks.get_children():
+            self.tree_bookmarks.delete(item)
+        t = TRANSLATIONS[self.language]
+        if not self.bookmarks:
+            self.tree_bookmarks.insert("", tk.END, values=(t['tree_no_bookmarks'], "", ""), tags=("noresult",))
+            return
+        for path, bookmark in self.bookmarks.items():
+            if not os.path.exists(path):
+                continue
+            basename = os.path.basename(path)
+            is_dir = os.path.isdir(path)
+            display_name = self._get_display_name(path)
+            typ_str = t['type_folder'] if is_dir else t['type_file']
+            tags = ()
+            color = bookmark.get("color")
+            if color:
+                tags = (f"tag_{color}",)
+            self.tree_bookmarks.insert("", tk.END, values=(display_name, path, typ_str), tags=tags)
+
+    def _update_tree_item(self, path):
+        for item in self.tree.get_children():
+            values = self.tree.item(item, "values")
+            if values and len(values) >= 2 and values[1] == path:
+                display_name = self._get_display_name(path)
+                self.tree.item(item, values=(display_name, values[1], values[2]))
+                bookmark = self.bookmarks.get(path, {})
+                color = bookmark.get("color")
+                tags = ()
+                if color:
+                    tags = (f"tag_{color}",)
+                self.tree.item(item, tags=tags)
+
+    def _toggle_star(self, path):
+        if path not in self.bookmarks:
+            self.bookmarks[path] = {"star": True}
+        else:
+            self.bookmarks[path]["star"] = not self.bookmarks[path].get("star", False)
+            if not self.bookmarks[path].get("star") and not self.bookmarks[path].get("color"):
+                if path in self.bookmarks:
+                    del self.bookmarks[path]
+        self._save_settings()
+        self._update_tree_item(path)
+        self._refresh_bookmarks_tree()
+
+    def _set_color_tag(self, path, color):
+        if path not in self.bookmarks:
+            if color:
+                self.bookmarks[path] = {"color": color}
+        else:
+            if color:
+                self.bookmarks[path]["color"] = color
+            else:
+                if "color" in self.bookmarks[path]:
+                    del self.bookmarks[path]["color"]
+                if not self.bookmarks[path].get("star") and not self.bookmarks[path].get("color"):
+                    if path in self.bookmarks:
+                        del self.bookmarks[path]
+        self._save_settings()
+        self._update_tree_item(path)
+        self._refresh_bookmarks_tree()
+
+    def _remove_bookmark(self, path):
+        if path in self.bookmarks:
+            del self.bookmarks[path]
+        self._save_settings()
+        self._update_tree_item(path)
+        self._refresh_bookmarks_tree()
+
+    def _rebuild_ctx_menu(self, path):
+        t = TRANSLATIONS[self.language]
+        self.cm.delete(0, tk.END)
+        self.cm.add_command(label=t['menu_open'], command=self._open)
+        self.cm.add_command(label=t['menu_open_loc'], command=self._open_loc)
+        self.cm.add_command(label=t['menu_copy_path'], command=self._copy_path)
+        self.cm.add_separator()
+        
+        bookmark = self.bookmarks.get(path, {})
+        has_star = bookmark.get("star", False)
+        star_label = "⭐ " + (t['menu_remove_star'] if has_star else t['menu_add_star'])
+        self.cm.add_command(label=star_label, command=lambda: self._toggle_star(path))
+        
+        color_menu = tk.Menu(self.cm, tearoff=0)
+        theme_colors = {
+            'light': {'bg': '#f3f4f6', 'fg': '#1f2937', 'accent': '#2563eb', 'sel_fg': '#ffffff'},
+            'dark': {'bg': '#1f2937', 'fg': '#f9fafb', 'accent': '#3b82f6', 'sel_fg': '#ffffff'}
+        }
+        c = theme_colors[self.theme]
+        color_menu.config(bg=c['bg'], fg=c['fg'], activebackground=c['accent'], activeforeground=c['sel_fg'])
+        
+        colors = [
+            ("red", "🔴", "Rojo", "Red"),
+            ("orange", "🟠", "Naranja", "Orange"),
+            ("yellow", "🟡", "Amarillo", "Yellow"),
+            ("green", "🟢", "Verde", "Green"),
+            ("blue", "🔵", "Azul", "Blue"),
+            ("purple", "🟣", "Púrpura", "Purple"),
+            ("gray", "⚫", "Gris", "Gray")
+        ]
+        
+        current_color = bookmark.get("color")
+        for name, emoji, es_lbl, en_lbl in colors:
+            lbl = f"{emoji} {es_lbl if self.language == 'es' else en_lbl}"
+            if current_color == name:
+                lbl += " ✓"
+            color_menu.add_command(label=lbl, command=lambda col=name: self._set_color_tag(path, col))
+            
+        if current_color:
+            color_menu.add_separator()
+            color_menu.add_command(label=t['menu_remove_tag'], command=lambda: self._set_color_tag(path, None))
+            
+        self.cm.add_cascade(label=t['menu_color_tags'], menu=color_menu)
+        
+        if bookmark:
+            self.cm.add_separator()
+            self.cm.add_command(label=t['menu_remove_bookmark'], command=lambda: self._remove_bookmark(path))
 
     def _open(self):
         p = self._get_sel_path()
@@ -1959,6 +2188,7 @@ class ZetaApp:
         self.custom_ignore = ""
         self.search_history = []
         self.sound = True
+        self.bookmarks = {}
         try:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r', encoding='utf-8') as f:
@@ -1973,6 +2203,7 @@ class ZetaApp:
                     self.custom_ignore = ""
                     self.search_history = cfg.get('search_history', [])
                     self.sound = cfg.get('sound', True)
+                    self.bookmarks = cfg.get('bookmarks', {})
         except Exception:
             pass
 
@@ -1992,7 +2223,8 @@ class ZetaApp:
                     'ignore_system': self.var_ignore_system.get() if hasattr(self, 'var_ignore_system') else self.ignore_system,
                     'custom_ignore': "",
                     'search_history': self.search_history,
-                    'sound': self.var_sound.get() if hasattr(self, 'var_sound') else self.sound
+                    'sound': self.var_sound.get() if hasattr(self, 'var_sound') else self.sound,
+                    'bookmarks': self.bookmarks
                 }, f, ensure_ascii=False, indent=4)
         except Exception:
             pass
@@ -2116,13 +2348,18 @@ class ZetaApp:
         self.btn_prev.config(text=t['btn_prev'])
         self.btn_next.config(text=t['btn_next'])
         
+        if hasattr(self, 'notebook'):
+            self.notebook.tab(0, text=t['tab_search'])
+            self.notebook.tab(1, text=t['tab_bookmarks'])
+
         self.tree.heading("nombre", text=t['col_name'])
         self.tree.heading("ruta", text=t['col_path'])
         self.tree.heading("tipo", text=t['col_type'])
-        
-        self.cm.entryconfigure(0, label=t['menu_open'])
-        self.cm.entryconfigure(1, label=t['menu_open_loc'])
-        self.cm.entryconfigure(2, label=t['menu_copy_path'])
+        if hasattr(self, 'tree_bookmarks'):
+            self.tree_bookmarks.heading("nombre", text=t['col_name'])
+            self.tree_bookmarks.heading("ruta", text=t['col_path'])
+            self.tree_bookmarks.heading("tipo", text=t['col_type'])
+            self._refresh_bookmarks_tree()
 
         # Update Hovertips texts dynamically
         if hasattr(self, 'tip_help'):
@@ -2346,6 +2583,215 @@ class ZetaApp:
             self.btn_theme.config(image="", text=c['theme_icon'])
             
         self.tree.tag_configure("noresult", foreground="red" if self.theme == 'light' else "#ff6b6b")
+        if hasattr(self, 'tree_bookmarks'):
+            self.tree_bookmarks.tag_configure("noresult", foreground="red" if self.theme == 'light' else "#ff6b6b")
+            
+        tag_colors = {
+            'light': {
+                'red': ('#fee2e2', '#991b1b'),
+                'orange': ('#ffedd5', '#9a3412'),
+                'yellow': ('#fef9c3', '#854d0e'),
+                'green': ('#dcfce7', '#166534'),
+                'blue': ('#dbeafe', '#1e40af'),
+                'purple': ('#f3e8ff', '#6b21a8'),
+                'gray': ('#f3f4f6', '#374151')
+            },
+            'dark': {
+                'red': ('#7f1d1d', '#fecaca'),
+                'orange': ('#7c2d12', '#ffedd5'),
+                'yellow': ('#713f12', '#fef9c3'),
+                'green': ('#064e3b', '#dcfce7'),
+                'blue': ('#1e3a8a', '#dbeafe'),
+                'purple': ('#581c87', '#f3e8ff'),
+                'gray': ('#374151', '#f3f4f6')
+            }
+        }
+        
+        for col, (bg, fg) in tag_colors[self.theme].items():
+            self.tree.tag_configure(f"tag_{col}", background=bg, foreground=fg)
+            if hasattr(self, 'tree_bookmarks'):
+                self.tree_bookmarks.tag_configure(f"tag_{col}", background=bg, foreground=fg)
+
+    def _get_file_metadata(self, filepath):
+        metadata = {}
+        if sys.platform != "win32" or version_dll is None:
+            return metadata
+        try:
+            dw_handle = wintypes.DWORD(0)
+            size = GetFileVersionInfoSizeW(filepath, ctypes.byref(dw_handle))
+            if size == 0:
+                return metadata
+                
+            buf = ctypes.create_string_buffer(size)
+            if not GetFileVersionInfoW(filepath, 0, size, buf):
+                return metadata
+                
+            p_translation = ctypes.c_void_p()
+            translation_len = ctypes.c_uint(0)
+            lang_codes = []
+            
+            if VerQueryValueW(buf, "\\VarFileInfo\\Translation", ctypes.byref(p_translation), ctypes.byref(translation_len)):
+                if translation_len.value >= 4:
+                    ptr = ctypes.cast(p_translation, ctypes.POINTER(wintypes.WORD))
+                    for i in range(translation_len.value // 4):
+                        lang_id = ptr[i*2]
+                        code_page = ptr[i*2+1]
+                        lang_codes.append(f"{lang_id:04x}{code_page:04x}")
+            
+            if not lang_codes:
+                lang_codes = ["040904b0", "040a04b0", "040904e4", "04090000"]
+                
+            keys = [
+                ("CompanyName", "Empresa creadora" if self.language == "es" else "Company"),
+                ("FileDescription", "Descripción" if self.language == "es" else "Description"),
+                ("FileVersion", "Versión de archivo" if self.language == "es" else "File Version"),
+                ("LegalCopyright", "Copyright" if self.language == "es" else "Copyright"),
+                ("ProductName", "Producto" if self.language == "es" else "Product Name"),
+                ("ProductVersion", "Versión de producto" if self.language == "es" else "Product Version"),
+            ]
+            
+            for key, label in keys:
+                for lang_code in lang_codes:
+                    p_value = ctypes.c_void_p()
+                    value_len = ctypes.c_uint(0)
+                    query_path = f"\\StringFileInfo\\{lang_code}\\{key}"
+                    if VerQueryValueW(buf, query_path, ctypes.byref(p_value), ctypes.byref(value_len)):
+                        if value_len.value > 0:
+                            value_str = ctypes.wstring_at(p_value)
+                            if value_str:
+                                metadata[label] = value_str.strip()
+                                break
+        except Exception:
+            pass
+        return metadata
+
+    def _get_signature_info(self, path):
+        if sys.platform != "win32":
+            return None
+        try:
+            cmd = [
+                "powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                "-Command", f"Get-AuthenticodeSignature '{path}' | Select-Object Status, StatusMessage, SignerCertificate | ConvertTo-Json"
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=2, creationflags=0x08000000)
+            if res.returncode == 0 and res.stdout.strip():
+                import json
+                data = json.loads(res.stdout)
+                status = data.get("Status")
+                status_msg = data.get("StatusMessage")
+                cert = data.get("SignerCertificate")
+                subject = ""
+                if cert:
+                    if isinstance(cert, dict):
+                        subject = cert.get("Subject", "")
+                    elif isinstance(cert, str):
+                        subject = cert
+                        
+                status_mapping = {
+                    0: "Válida" if self.language == 'es' else "Valid",
+                    1: "Error desconocido" if self.language == 'es' else "Unknown error",
+                    2: "No firmado" if self.language == 'es' else "Not signed",
+                    3: "No confiable" if self.language == 'es' else "Not trusted",
+                    4: "Firma corrupta / Hash incorrecto" if self.language == 'es' else "Hash mismatch",
+                    5: "Incompatible" if self.language == 'es' else "Incompatible",
+                }
+                
+                status_text = status_mapping.get(status, str(status))
+                if status == 0:
+                    return {
+                        "status": "Válida" if self.language == 'es' else "Valid",
+                        "signer": subject or ("Desconocido" if self.language == 'es' else "Unknown")
+                    }
+                elif status == 2:
+                    return {
+                        "status": "No firmado" if self.language == 'es' else "Not signed",
+                        "signer": None
+                    }
+                else:
+                    return {
+                        "status": f"{status_text} ({status_msg})" if status_msg else status_text,
+                        "signer": subject or None
+                    }
+        except Exception:
+            pass
+        return None
+
+    def _generate_hex_dump(self, filepath, max_bytes=512):
+        try:
+            with open(filepath, 'rb') as f:
+                data = f.read(max_bytes)
+            if not data:
+                return ""
+                
+            lines = []
+            lines.append("─" * 60)
+            lines.append("VOLCADO HEXADECIMAL (Primeros 512 bytes)" if self.language == 'es' else "HEX DUMP (First 512 bytes)")
+            lines.append("─" * 60)
+            
+            for i in range(0, len(data), 16):
+                chunk = data[i:i+16]
+                hex_str = " ".join(f"{b:02X}" for b in chunk)
+                if len(chunk) < 16:
+                    hex_str += " " * (3 * (16 - len(chunk)))
+                ascii_str = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
+                lines.append(f"{i:08X}  {hex_str}  |{ascii_str}|")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Error reading hex: {e}"
+
+    def _load_exe_sys_preview(self, path):
+        t = TRANSLATIONS[self.language]
+        try:
+            basename = os.path.basename(path)
+            header = f"=== DETALLES DEL ARCHIVO: {basename} ===\n" if self.language == 'es' else f"=== FILE DETAILS: {basename} ===\n"
+            
+            size_bytes = os.path.getsize(path)
+            if size_bytes < 1024:
+                size_str = f"{size_bytes} B"
+            elif size_bytes < 1024 * 1024:
+                size_str = f"{size_bytes / 1024:.2f} KB"
+            else:
+                size_str = f"{size_bytes / (1024 * 1024):.2f} MB"
+                
+            info_lines = []
+            info_lines.append(f"{'Tamaño' if self.language == 'es' else 'Size'}: {size_str}")
+            
+            metadata = self._get_file_metadata(path)
+            if metadata:
+                for key, val in metadata.items():
+                    info_lines.append(f"{key}: {val}")
+                    
+            sig = self._get_signature_info(path)
+            if sig:
+                info_lines.append(f"{'Firma Digital' if self.language == 'es' else 'Digital Signature'}: {sig['status']}")
+                if sig['signer']:
+                    info_lines.append(f"{'Firmante' if self.language == 'es' else 'Signer'}: {sig['signer']}")
+                    
+            info_text = header + "\n".join(info_lines) + "\n\n"
+            hex_dump = self._generate_hex_dump(path)
+            self.q.put(("preview_raw", info_text + hex_dump))
+        except Exception as ex:
+            self.q.put(("preview_raw", t['preview_error'].format(error=ex)))
+
+    def _load_other_binary_preview(self, path):
+        t = TRANSLATIONS[self.language]
+        try:
+            basename = os.path.basename(path)
+            size_bytes = os.path.getsize(path)
+            if size_bytes < 1024:
+                size_str = f"{size_bytes} B"
+            elif size_bytes < 1024 * 1024:
+                size_str = f"{size_bytes / 1024:.2f} KB"
+            else:
+                size_str = f"{size_bytes / (1024 * 1024):.2f} MB"
+                
+            header = f"=== ARCHIVO BINARIO: {basename} ===\n" if self.language == 'es' else f"=== BINARY FILE: {basename} ===\n"
+            info_text = header + f"{'Tamaño' if self.language == 'es' else 'Size'}: {size_str}\n\n"
+            
+            hex_dump = self._generate_hex_dump(path)
+            self.q.put(("preview_raw", info_text + hex_dump))
+        except Exception as ex:
+            self.q.put(("preview_raw", t['preview_error'].format(error=ex)))
 
 
 if __name__ == '__main__':
