@@ -83,8 +83,25 @@ if sys.platform == "win32":
             ("cAlternateFileName", ctypes.c_wchar * 14),
         ]
 
+    class RECT(ctypes.Structure):
+        _fields_ = [
+            ('left',   ctypes.c_long), ('top',    ctypes.c_long),
+            ('right',  ctypes.c_long), ('bottom', ctypes.c_long),
+        ]
+
+    class POINT(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
     try:
         kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+        shell32 = ctypes.windll.shell32
+        
+        try:
+            dwmapi = ctypes.windll.dwmapi
+        except Exception:
+            dwmapi = None
+
         FindFirstFileW = kernel32.FindFirstFileW
         FindFirstFileW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(WIN32_FIND_DATAW)]
         FindFirstFileW.restype = wintypes.HANDLE
@@ -96,6 +113,73 @@ if sys.platform == "win32":
         FindClose = kernel32.FindClose
         FindClose.argtypes = [wintypes.HANDLE]
         FindClose.restype = wintypes.BOOL
+
+        # user32 signatures
+        user32.GetParent.argtypes = [wintypes.HWND]
+        user32.GetParent.restype = wintypes.HWND
+
+        user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
+        user32.GetWindowRect.restype = wintypes.BOOL
+
+        user32.GetCursorPos.argtypes = [ctypes.POINTER(POINT)]
+        user32.GetCursorPos.restype = wintypes.BOOL
+
+        user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+        user32.GetAsyncKeyState.restype = wintypes.SHORT
+
+        user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.ShowWindow.restype = wintypes.BOOL
+
+        user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        user32.SetWindowPos.restype = wintypes.BOOL
+
+        user32.IsClipboardFormatAvailable.argtypes = [wintypes.UINT]
+        user32.IsClipboardFormatAvailable.restype = wintypes.BOOL
+
+        user32.OpenClipboard.argtypes = [wintypes.HWND]
+        user32.OpenClipboard.restype = wintypes.BOOL
+
+        user32.CloseClipboard.argtypes = []
+        user32.CloseClipboard.restype = wintypes.BOOL
+
+        user32.GetClipboardData.argtypes = [wintypes.UINT]
+        user32.GetClipboardData.restype = wintypes.HANDLE
+
+        # RegisterClassW / CreateWindowExW / SetLayeredWindowAttributes / UnregisterClassW
+        user32.RegisterClassW.argtypes = [ctypes.c_void_p]
+        user32.RegisterClassW.restype = wintypes.ATOM
+
+        user32.CreateWindowExW.argtypes = [
+            wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID
+        ]
+        user32.CreateWindowExW.restype = wintypes.HWND
+
+        user32.SetLayeredWindowAttributes.argtypes = [wintypes.HWND, wintypes.COLORREF, wintypes.BYTE, wintypes.DWORD]
+        user32.SetLayeredWindowAttributes.restype = wintypes.BOOL
+
+        user32.UnregisterClassW.argtypes = [wintypes.LPCWSTR, wintypes.HINSTANCE]
+        user32.UnregisterClassW.restype = wintypes.BOOL
+
+        # shell32 signatures
+        shell32.DragQueryFileW.argtypes = [wintypes.HANDLE, wintypes.UINT, wintypes.LPWSTR, wintypes.UINT]
+        shell32.DragQueryFileW.restype = wintypes.UINT
+
+        shell32.DragAcceptFiles.argtypes = [wintypes.HWND, wintypes.BOOL]
+        shell32.DragAcceptFiles.restype = None
+
+        shell32.DragFinish.argtypes = [wintypes.HANDLE]
+        shell32.DragFinish.restype = None
+
+        # kernel32 signatures
+        kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+        kernel32.GetModuleHandleW.restype = wintypes.HINSTANCE
+
+        # dwmapi signatures
+        if dwmapi:
+            dwmapi.DwmSetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+            dwmapi.DwmSetWindowAttribute.restype = ctypes.c_long
     except Exception:
         pass
 
@@ -365,6 +449,31 @@ def _normalize(text: str) -> str:
 
 def _normalize_name(name: str) -> str:
     return re.sub(r'[^a-z0-9]', '', _normalize(name))
+
+def _normalize_regex(pattern: str) -> str:
+    def repl(match):
+        val = match.group(0)
+        if val.startswith('\\'):
+            return val
+        return _normalize(val)
+    return re.sub(r'\\.|.', repl, pattern)
+
+def _is_blacklisted(path: str, blacklist: list) -> bool:
+    if not blacklist:
+        return False
+    parts = os.path.normpath(path).lower().split(os.sep)
+    if parts and parts[0].endswith(':'):
+        parts = parts[1:]
+    for kw in blacklist:
+        if '/' in kw or '\\' in kw:
+            kw_norm = os.path.normpath(kw).lower()
+            path_norm = os.path.normpath(path).lower()
+            if kw_norm in path_norm:
+                return True
+        else:
+            if kw in parts:
+                return True
+    return False
 
 def make_regex_pattern(word: str) -> str:
     char_map = {
@@ -663,7 +772,9 @@ def _search_chunk(args):
             else:
                 with open(path, 'rb') as f:
                     head = f.read(1024)
-                    if b'\x00' in head:
+                    if head.startswith((b'\xff\xfe', b'\xfe\xff')):
+                        pass
+                    elif b'\x00' in head:
                         continue
                     rest = f.read()
                     raw = head + rest
@@ -749,10 +860,8 @@ class SearchEngine:
                 return
             
             # Folder Blacklist check on the popped directory absolute path
-            if blacklist:
-                current_lower = current.lower()
-                if any(kw in current_lower for kw in blacklist):
-                    continue
+            if _is_blacklisted(current, blacklist):
+                continue
                 
             search_path = os.path.join(current, "*")
             h = FindFirstFileW(search_path, ctypes.byref(fd))
@@ -772,20 +881,14 @@ class SearchEngine:
                         if is_dir:
                             if name.lower() not in SKIP_DIRS:
                                 # Folder Blacklist check before appending to stack
-                                if blacklist:
-                                    full_path_lower = full_path.lower()
-                                    if not any(kw in full_path_lower for kw in blacklist):
-                                        stack.append(full_path)
-                                else:
+                                if not _is_blacklisted(full_path, blacklist):
                                     stack.append(full_path)
                         else:
                             # Blacklist check for files
-                            if blacklist:
-                                full_path_lower = full_path.lower()
-                                if any(kw in full_path_lower for kw in blacklist):
-                                    if not FindNextFileW(h, ctypes.byref(fd)):
-                                        break
-                                    continue
+                            if _is_blacklisted(full_path, blacklist):
+                                if not FindNextFileW(h, ctypes.byref(fd)):
+                                    break
+                                continue
 
                             file_size = (fd.nFileSizeHigh * 4294967296) + fd.nFileSizeLow
                             # 15 MB native file size check for content search only
@@ -812,7 +915,7 @@ class SearchEngine:
                         break
             finally:
                 FindClose(h)
-
+                                    
     def _walk_files_scandir(self, root, text_only=True, extensions=None, blacklist=None):
         stack = [root]
         while stack:
@@ -821,10 +924,8 @@ class SearchEngine:
                 return
             
             # Folder Blacklist check on the popped directory absolute path
-            if blacklist:
-                current_lower = current.lower()
-                if any(kw in current_lower for kw in blacklist):
-                    continue
+            if _is_blacklisted(current, blacklist):
+                continue
                 
             try:
                 with os.scandir(current) as it:
@@ -834,18 +935,12 @@ class SearchEngine:
                         if e.is_dir(follow_symlinks=False):
                             if e.name.lower() not in SKIP_DIRS:
                                 # Folder Blacklist check before appending to stack
-                                if blacklist:
-                                    full_path_lower = e.path.lower()
-                                    if not any(kw in full_path_lower for kw in blacklist):
-                                        stack.append(e.path)
-                                else:
+                                if not _is_blacklisted(e.path, blacklist):
                                     stack.append(e.path)
                         else:
                             # Blacklist check for files
-                            if blacklist:
-                                full_path_lower = e.path.lower()
-                                if any(kw in full_path_lower for kw in blacklist):
-                                    continue
+                            if _is_blacklisted(e.path, blacklist):
+                                continue
 
                             try:
                                 stat = e.stat(follow_symlinks=False)
@@ -932,7 +1027,7 @@ class SearchEngine:
         scan_cb(path, scanned, total, matches)
         """
         self.cancel = False
-        kws_norm = [_normalize(kw) for kw in keywords]
+        kws_norm = [_normalize_regex(kw) for kw in keywords] if regex else [_normalize(kw) for kw in keywords]
 
         # ── FASE 1: recolectar todos los archivos ──────────────────────────────
         all_files = []
@@ -960,7 +1055,7 @@ class SearchEngine:
         try:
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
-            c.execute("SELECT path, mtime, size, normalized_text FROM cache WHERE path LIKE ?", (root + '%',))
+            c.execute("SELECT path, mtime, size, normalized_text FROM cache WHERE path >= ? AND path < ?", (root, root + '\U0010FFFF'))
             for row in c.fetchall():
                 cache_map[row[0]] = (row[1], row[2], row[3])
             conn.close()
@@ -976,7 +1071,7 @@ class SearchEngine:
         # Precompilar patrones de expresiones regulares para coincidencia de caché
         if regex:
             try:
-                query_norm = _normalize(keywords[0])
+                query_norm = _normalize_regex(keywords[0])
                 flags = re.IGNORECASE if not exact else 0
                 pat_str = re.compile(query_norm, flags)
             except Exception:
