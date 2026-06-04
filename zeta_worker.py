@@ -78,12 +78,18 @@ def _normalize_bytes(raw: bytes) -> bytes:
 
 def search_chunk(args):
     """Procesa un lote (chunk) de archivos a nivel de bytes, sin decodificar."""
-    paths_meta, keywords_bytes, whole_word = args
+    paths_meta, keywords_bytes, whole_word, regex, exact = args
     results = []
     new_cache_entries = []
     
-    # Precompilar patrones de expresiones regulares si es búsqueda por palabra completa
-    if whole_word:
+    # Precompilar patrones de expresiones regulares si es búsqueda por palabra completa o regex
+    if regex:
+        try:
+            flags = re.IGNORECASE if not exact else 0
+            pat = re.compile(keywords_bytes[0], flags)
+        except Exception:
+            return (len(paths_meta), [], [])
+    elif whole_word:
         first_pattern = re.compile(br'(?<![a-z0-9])' + re.escape(keywords_bytes[0]) + br'(?![a-z0-9])')
         other_patterns = [re.compile(br'(?<![a-z0-9])' + re.escape(kw) + br'(?![a-z0-9])') for kw in keywords_bytes[1:]]
     else:
@@ -105,7 +111,9 @@ def search_chunk(args):
             else:
                 with open(path, 'rb') as f:
                     head = f.read(1024)
-                    if b'\x00' in head:
+                    if head.startswith((b'\xff\xfe', b'\xfe\xff')):
+                        pass
+                    elif b'\x00' in head:
                         continue
                     rest = f.read()
                     raw = head + rest
@@ -114,7 +122,14 @@ def search_chunk(args):
             normalized_str = normalized.decode('latin-1', errors='ignore')
             new_cache_entries.append((path, mtime, size, normalized_str))
             
-            if whole_word:
+            if regex:
+                try:
+                    count = len(pat.findall(normalized))
+                except Exception:
+                    count = 0
+                if count > 0:
+                    results.append((count, path))
+            elif whole_word:
                 count = len(first_pattern.findall(normalized))
                 if count > 0:
                     match_all = True
