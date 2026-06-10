@@ -360,9 +360,23 @@ TRANSLATIONS = {
         'menu_color_tags': 'Etiquetas de Color',
         'menu_remove_tag': 'Quitar Etiqueta',
         'menu_remove_bookmark': 'Eliminar Marcador',
+        'tree_no_bookmarks': '❌ Sin marcadores',
         'tab_search': 'Búsqueda',
         'tab_bookmarks': 'Marcadores',
-        'tree_no_bookmarks': '❌ Sin marcadores'
+        'tab_space': 'Espacio',
+        'btn_analyze_space': 'Analizar Espacio',
+        'btn_cancel_space': 'Cancelar',
+        'col_size': 'Tamaño',
+        'lbl_top_heaviest': 'Top 50 Archivos más Pesados',
+        'lbl_categories_breakdown': 'Desglose por Categorías',
+        'status_analyzing': 'Analizando espacio (detectados: {count})...',
+        'status_analysis_done': '✅ Análisis de espacio completado en {time:.1f}s',
+        'cat_documents': 'Documentos',
+        'cat_images': 'Imágenes',
+        'cat_media': 'Video / Audio',
+        'cat_system': 'Ejecutables / Sistema',
+        'cat_archive': 'Comprimidos',
+        'cat_others': 'Otros'
     },
     'en': {
         'title': 'Zeta',
@@ -470,9 +484,23 @@ TRANSLATIONS = {
         'menu_color_tags': 'Color Tags',
         'menu_remove_tag': 'Remove Tag',
         'menu_remove_bookmark': 'Remove Bookmark',
+        'tree_no_bookmarks': '❌ No bookmarks',
         'tab_search': 'Search',
         'tab_bookmarks': 'Bookmarks',
-        'tree_no_bookmarks': '❌ No bookmarks'
+        'tab_space': 'Space',
+        'btn_analyze_space': 'Analyze Space',
+        'btn_cancel_space': 'Cancel',
+        'col_size': 'Size',
+        'lbl_top_heaviest': 'Top 50 Heaviest Files',
+        'lbl_categories_breakdown': 'Space by Category',
+        'status_analyzing': 'Analyzing space (detected: {count})...',
+        'status_analysis_done': '✅ Space analysis completed in {time:.1f}s',
+        'cat_documents': 'Documents',
+        'cat_images': 'Images',
+        'cat_media': 'Video / Audio',
+        'cat_system': 'System / Executables',
+        'cat_archive': 'Compressed',
+        'cat_others': 'Others'
     }
 }
 
@@ -490,6 +518,17 @@ def _normalize_regex(pattern: str) -> str:
             return val
         return _normalize(val)
     return re.sub(r'\\.|.', repl, pattern)
+
+def _format_size(size_bytes):
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.2f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.2f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
 
 def _is_blacklisted(path: str, blacklist: list) -> bool:
     if not blacklist:
@@ -1009,6 +1048,93 @@ class SearchEngine:
                 pass
         yield from self._walk_files_scandir(root, text_only, extensions, blacklist)
 
+    def _walk_space_win32(self, root, blacklist=None):
+        stack = [root]
+        fd = WIN32_FIND_DATAW()
+        invalid_val = INVALID_HANDLE_VALUE_VAL
+        
+        while stack:
+            current = stack.pop()
+            if self.cancel:
+                return
+            
+            if _is_blacklisted(current, blacklist):
+                continue
+                
+            search_path = os.path.join(current, "*")
+            h = FindFirstFileW(search_path, ctypes.byref(fd))
+            if h is None or h == invalid_val:
+                continue
+                
+            try:
+                while True:
+                    if self.cancel:
+                        return
+                    name = fd.cFileName
+                    if name not in (".", ".."):
+                        attrs = fd.dwFileAttributes
+                        is_dir = bool(attrs & FILE_ATTRIBUTE_DIRECTORY)
+                        full_path = os.path.join(current, name)
+                        
+                        if is_dir:
+                            if name.lower() not in SKIP_DIRS:
+                                if not _is_blacklisted(full_path, blacklist):
+                                    stack.append(full_path)
+                        else:
+                            if _is_blacklisted(full_path, blacklist):
+                                if not FindNextFileW(h, ctypes.byref(fd)):
+                                    break
+                                continue
+
+                            file_size = (fd.nFileSizeHigh * 4294967296) + fd.nFileSizeLow
+                            yield (name, full_path, file_size)
+                                
+                    if not FindNextFileW(h, ctypes.byref(fd)):
+                        break
+            finally:
+                FindClose(h)
+
+    def _walk_space_scandir(self, root, blacklist=None):
+        stack = [root]
+        while stack:
+            current = stack.pop()
+            if self.cancel:
+                return
+            
+            if _is_blacklisted(current, blacklist):
+                continue
+                
+            try:
+                with os.scandir(current) as it:
+                    for e in it:
+                        if self.cancel:
+                            return
+                        if e.is_dir(follow_symlinks=False):
+                            if e.name.lower() not in SKIP_DIRS:
+                                if not _is_blacklisted(e.path, blacklist):
+                                    stack.append(e.path)
+                        else:
+                            if _is_blacklisted(e.path, blacklist):
+                                continue
+
+                            try:
+                                file_size = e.stat(follow_symlinks=False).st_size
+                                yield (e.name, e.path, file_size)
+                            except Exception:
+                                continue
+            except PermissionError:
+                pass
+
+    def walk_space(self, root, blacklist=None):
+        if sys.platform == "win32":
+            try:
+                yield from self._walk_space_win32(root, blacklist)
+                return
+            except Exception:
+                pass
+        yield from self._walk_space_scandir(root, blacklist)
+
+
     # ── búsqueda por nombre ───────────────────────────────────────────────────
     def search_name(self, root, keywords, exact, extensions, match_cb, scan_cb, blacklist=None, threshold=None, regex=False):
         """scan_cb(path, scanned, total, matches) - total=-1 mientras recolecta"""
@@ -1234,6 +1360,20 @@ class ZetaApp:
         self.last_type = "nombre"
         self.start_time = 0
         self.stats = {'scanned': 0, 'matches': 0, 'last_path': ''}
+        self.is_analyzing_space = False
+        self.space_stats = {'scanned': 0, 'total_size': 0}
+        self.top50_data = []
+        self.category_sizes = {
+            'documents': 0, 'images': 0, 'media': 0, 'system': 0, 'archive': 0, 'others': 0
+        }
+        self.category_colors = {
+            'documents': '#f59e0b',
+            'images': '#10b981',
+            'media': '#3b82f6',
+            'system': '#ef4444',
+            'archive': '#8b5cf6',
+            'others': '#6b7280'
+        }
         self.match_indices = []
         self.cur_match = 0
         self.matches_shown = 0
@@ -1411,9 +1551,11 @@ class ZetaApp:
 
         self.tab_search = ttk.Frame(self.notebook)
         self.tab_bookmarks = ttk.Frame(self.notebook)
+        self.tab_space = ttk.Frame(self.notebook)
 
         self.notebook.add(self.tab_search, text="Búsqueda")
         self.notebook.add(self.tab_bookmarks, text="Marcadores")
+        self.notebook.add(self.tab_space, text="Espacio")
         
         # Tiny header frame for the "❓" label in search tab
         left_top = ttk.Frame(self.tab_search)
@@ -1449,6 +1591,45 @@ class ZetaApp:
         self.tree_bookmarks.configure(yscrollcommand=sb_tree_bookmarks.set)
         sb_tree_bookmarks.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree_bookmarks.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # --- Pestaña Espacio ---
+        space_top = ttk.Frame(self.tab_space, padding=5)
+        space_top.pack(fill=tk.X, side=tk.TOP)
+        self.btn_analyze_space = ttk.Button(space_top, text="Analizar Espacio", command=self._start_space_analysis)
+        self.btn_analyze_space.pack(side=tk.LEFT, padx=5)
+        self.lbl_space_status = ttk.Label(space_top, text="", font=("Segoe UI", 9, "italic"))
+        self.lbl_space_status.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+
+        space_paned = ttk.PanedWindow(self.tab_space, orient=tk.VERTICAL)
+        space_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        self.frame_top50 = ttk.LabelFrame(space_paned, text="Top 50 Archivos más Pesados", padding=5)
+        space_paned.add(self.frame_top50, weight=1)
+
+        cols_space = ("nombre", "ruta", "tamano")
+        self.tree_space = ttk.Treeview(self.frame_top50, columns=cols_space, show="headings", height=8)
+        for c, w, t, stretch in (("nombre", 150, "Nombre", False),
+                                 ("ruta", 250, "Ruta", True),
+                                 ("tamano", 80, "Tamaño", False)):
+            self.tree_space.heading(c, text=t)
+            self.tree_space.column(c, width=w, anchor=tk.W, stretch=stretch)
+        self.tree_space.tag_configure("noresult", foreground="red")
+
+        sb_tree_space = ttk.Scrollbar(self.frame_top50, orient=tk.VERTICAL, command=self.tree_space.yview)
+        self.tree_space.configure(yscrollcommand=sb_tree_space.set)
+        sb_tree_space.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree_space.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.frame_categories = ttk.LabelFrame(space_paned, text="Desglose por Categorías", padding=5)
+        space_paned.add(self.frame_categories, weight=1)
+
+        self.canvas_space = tk.Canvas(self.frame_categories, height=120, highlightthickness=0)
+        self.canvas_space.pack(fill=tk.BOTH, expand=True)
+        self.canvas_space.bind("<Configure>", lambda e: self._draw_category_chart())
+
+        self.tree_space.bind("<<TreeviewSelect>>", self._on_select)
+        self.tree_space.bind("<Double-1>", self._on_double_click)
+        self.tree_space.bind("<Button-3>", self._ctx_menu)
 
         # Initialize Hovertips for options and help icon
         t = TRANSLATIONS[self.language]
@@ -1533,7 +1714,12 @@ class ZetaApp:
             active_tab = self.notebook.index(self.notebook.select())
         except Exception:
             active_tab = 0
-        tree = self.tree if active_tab == 0 else self.tree_bookmarks
+        if active_tab == 0:
+            tree = self.tree
+        elif active_tab == 1:
+            tree = self.tree_bookmarks
+        else:
+            tree = self.tree_space
         sel = tree.selection()
         if not sel: return None
         v = tree.item(sel[0])['values']
@@ -1562,7 +1748,7 @@ class ZetaApp:
         try:
             while True:
                 kind, data = self.q.get_nowait()
-                if not self.is_searching:
+                if not self.is_searching and not self.is_analyzing_space:
                     if kind not in ("preview_raw", "preview_hl", "preview_image"):
                         continue
                 if kind == "match":
@@ -1592,6 +1778,14 @@ class ZetaApp:
                     self.var_status.set(data)
                 elif kind == "done":
                     self._finish(data)
+                elif kind == "space_progress":
+                    scanned, total_size = data
+                    self.space_stats = {'scanned': scanned, 'total_size': total_size}
+                    t = TRANSLATIONS[self.language]
+                    self.lbl_space_status.config(text=t['status_analyzing'].format(count=scanned))
+                elif kind == "space_done":
+                    top50, category_sizes, elapsed, completed = data
+                    self._finish_space_analysis(top50, category_sizes, elapsed, completed)
                 elif kind == "preview_raw":
                     self._show_raw(data)
                 elif kind == "preview_hl":
@@ -1741,6 +1935,221 @@ class ZetaApp:
                 winsound.MessageBeep(winsound.MB_ICONASTERISK)
             except Exception:
                 pass
+
+    # ── analizador de espacio en disco ───────────────────────────────────────
+    def _start_space_analysis(self):
+        if self.is_analyzing_space:
+            self.engine.stop()
+            self.is_analyzing_space = False
+            t = TRANSLATIONS[self.language]
+            self.btn_analyze_space.config(text=t['btn_analyze_space'], state=tk.NORMAL)
+            self.lbl_space_status.config(text=t['status_canceled'])
+            return
+
+        if self.is_searching:
+            t = TRANSLATIONS[self.language]
+            msg = "Por favor, cancela la búsqueda activa antes de iniciar el análisis de espacio." if self.language == 'es' else "Please cancel the active search before starting space analysis."
+            messagebox.showwarning("Zeta", msg)
+            return
+
+        base = self.var_path.get().strip()
+        t = TRANSLATIONS[self.language]
+        if not base or not os.path.isdir(base):
+            messagebox.showwarning("Zeta", t['msg_valid_folder'])
+            return
+
+        for i in self.tree_space.get_children():
+            self.tree_space.delete(i)
+
+        self.canvas_space.delete("all")
+
+        self.is_analyzing_space = True
+        self.start_time = time.time()
+        self.space_stats = {'scanned': 0, 'total_size': 0}
+        self.top50_data = []
+        self.category_sizes = {
+            'documents': 0, 'images': 0, 'media': 0, 'system': 0, 'archive': 0, 'others': 0
+        }
+
+        self.btn_analyze_space.config(text=t['btn_cancel_space'])
+        self.lbl_space_status.config(text=t['status_analyzing'].format(count=0))
+
+        blacklist = []
+        if self.var_ignore_git.get():
+            blacklist.append(".git")
+        if self.var_ignore_node.get():
+            blacklist.append("node_modules")
+        if self.var_ignore_appdata.get():
+            blacklist.append("appdata")
+        if self.var_ignore_cache.get():
+            blacklist.append("cache")
+        if self.var_ignore_system.get():
+            blacklist.extend(["$recycle.bin", "system volume information", ".trash"])
+        custom = self.var_custom_ignore.get().strip()
+        if custom:
+            for item in custom.split(","):
+                val = item.strip().lower()
+                if val:
+                    blacklist.append(val)
+
+        threading.Thread(target=self._run_space_analysis, args=(base, tuple(blacklist)), daemon=True).start()
+
+    def _run_space_analysis(self, base, blacklist):
+        import heapq
+        self.engine.cancel = False
+        top_files = []
+        category_sizes = {
+            'documents': 0, 'images': 0, 'media': 0, 'system': 0, 'archive': 0, 'others': 0
+        }
+        total_size = 0
+        scanned_count = 0
+
+        def get_cat_key(ext):
+            ext = ext.lower()
+            if ext in FILE_TYPES['type_text']: return 'documents'
+            if ext in FILE_TYPES['type_images']: return 'images'
+            if ext in FILE_TYPES['type_media']: return 'media'
+            if ext in FILE_TYPES['type_sys']: return 'system'
+            if ext in FILE_TYPES['type_archive']: return 'archive'
+            return 'others'
+
+        try:
+            for name, path, file_size in self.engine.walk_space(base, blacklist):
+                if self.engine.cancel:
+                    break
+                
+                scanned_count += 1
+                total_size += file_size
+                
+                ext = os.path.splitext(name)[1].lower()
+                cat = get_cat_key(ext)
+                category_sizes[cat] += file_size
+                
+                if len(top_files) < 50:
+                    heapq.heappush(top_files, (file_size, name, path))
+                else:
+                    if file_size > top_files[0][0]:
+                        heapq.heapreplace(top_files, (file_size, name, path))
+                        
+                if scanned_count % 2000 == 0:
+                    self.q.put(("space_progress", (scanned_count, total_size)))
+
+            elapsed = time.time() - self.start_time
+            sorted_top = sorted(top_files, key=lambda x: x[0], reverse=True)
+            self.q.put(("space_done", (sorted_top, category_sizes, elapsed, not self.engine.cancel)))
+        except Exception as e:
+            self.q.put(("status", f"Error: {e}"))
+            self.q.put(("space_done", ([], category_sizes, 0, False)))
+
+    def _finish_space_analysis(self, top50, category_sizes, elapsed, completed):
+        self.is_analyzing_space = False
+        t = TRANSLATIONS[self.language]
+        self.btn_analyze_space.config(text=t['btn_analyze_space'], state=tk.NORMAL)
+        
+        self.top50_data = top50
+        self.category_sizes = category_sizes
+        
+        total_space = sum(category_sizes.values())
+        self.space_stats['total_size'] = total_space
+        
+        if not completed:
+            self.lbl_space_status.config(text=t['status_canceled'])
+        else:
+            self.lbl_space_status.config(text=t['status_analysis_done'].format(time=elapsed))
+            
+        for i in self.tree_space.get_children():
+            self.tree_space.delete(i)
+            
+        if not top50:
+            self.tree_space.insert("", tk.END, values=(t['tree_no_results'], "", ""), tags=("noresult",))
+        else:
+            for size, name, path in top50:
+                display_name = self._get_display_name(path)
+                tags = ()
+                bookmark = self.bookmarks.get(path)
+                if bookmark and bookmark.get("color"):
+                    tags = (f"tag_{bookmark['color']}",)
+                self.tree_space.insert("", tk.END, values=(display_name, path, _format_size(size)), tags=tags)
+                
+        self._draw_category_chart()
+        
+        if completed and self.var_sound.get() and elapsed > 3.0:
+            try:
+                import winsound
+                winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            except Exception:
+                pass
+
+    def _draw_category_chart(self):
+        if not hasattr(self, 'canvas_space'):
+            return
+        self.canvas_space.delete("all")
+        w = self.canvas_space.winfo_width()
+        if w < 200:
+            w = 300
+        
+        t = TRANSLATIONS[self.language]
+        is_dark = self.theme == 'dark'
+        text_color = '#f9fafb' if is_dark else '#1f2937'
+        track_color = '#374151' if is_dark else '#e5e7eb'
+        
+        bg_color = '#1f2937' if is_dark else '#f3f4f6'
+        self.canvas_space.config(bg=bg_color)
+
+        total_space = sum(self.category_sizes.values())
+        categories = ['documents', 'images', 'media', 'system', 'archive', 'others']
+        
+        def draw_rounded_rect(x1, y1, x2, y2, r, fill_color):
+            if x2 - x1 <= 0:
+                return
+            if x2 - x1 < 2 * r:
+                r = (x2 - x1) / 2
+            points = [
+                x1 + r, y1,
+                x2 - r, y1,
+                x2, y1 + r,
+                x2, y2 - r,
+                x2 - r, y2,
+                x1 + r, y2,
+                x1, y2 - r,
+                x1, y1 + r
+            ]
+            self.canvas_space.create_polygon(points, fill=fill_color, outline="", smooth=True)
+
+        for idx, cat in enumerate(categories):
+            size = self.category_sizes.get(cat, 0)
+            pct = size / total_space if total_space > 0 else 0
+            
+            # 2-column layout: col 0 for first 3, col 1 for remaining 3
+            col = 0 if idx < 3 else 1
+            row = idx if idx < 3 else idx - 3
+            row_y = row * 36 + 6
+            
+            col_width = (w - 30) / 2
+            if col == 0:
+                x1 = 10
+                x2 = 10 + col_width
+            else:
+                x1 = w/2 + 5
+                x2 = w - 10
+            
+            cat_label = t.get('cat_' + cat, cat.capitalize())
+            self.canvas_space.create_text(x1, row_y + 4, text=cat_label, fill=text_color, font=("Segoe UI", 9, "bold"), anchor=tk.W)
+            
+            pct_str = f"{pct*100:.1f}%"
+            size_str = _format_size(size)
+            lbl_text = f"{size_str} ({pct_str})"
+            self.canvas_space.create_text(x2, row_y + 4, text=lbl_text, fill=text_color, font=("Segoe UI", 9), anchor=tk.E)
+            
+            y1 = row_y + 13
+            y2 = row_y + 21
+            draw_rounded_rect(x1, y1, x2, y2, 4, track_color)
+            
+            fill_x2 = x1 + (x2 - x1) * pct
+            if pct > 0:
+                fill_color = self.category_colors.get(cat, '#6b7280')
+                draw_rounded_rect(x1, y1, fill_x2, y2, 4, fill_color)
+
 
     # ── preview ───────────────────────────────────────────────────────────────
     def _reset_nav(self):
@@ -2351,6 +2760,8 @@ class ZetaApp:
         if hasattr(self, 'notebook'):
             self.notebook.tab(0, text=t['tab_search'])
             self.notebook.tab(1, text=t['tab_bookmarks'])
+            if len(self.notebook.tabs()) > 2:
+                self.notebook.tab(2, text=t['tab_space'])
 
         self.tree.heading("nombre", text=t['col_name'])
         self.tree.heading("ruta", text=t['col_path'])
@@ -2360,6 +2771,14 @@ class ZetaApp:
             self.tree_bookmarks.heading("ruta", text=t['col_path'])
             self.tree_bookmarks.heading("tipo", text=t['col_type'])
             self._refresh_bookmarks_tree()
+        if hasattr(self, 'tree_space'):
+            self.tree_space.heading("nombre", text=t['col_name'])
+            self.tree_space.heading("ruta", text=t['col_path'])
+            self.tree_space.heading("tamano", text=t['col_size'])
+            self.frame_top50.config(text=t['lbl_top_heaviest'])
+            self.frame_categories.config(text=t['lbl_categories_breakdown'])
+            self.btn_analyze_space.config(text=t['btn_cancel_space'] if self.is_analyzing_space else t['btn_analyze_space'])
+            self._draw_category_chart()
 
         # Update Hovertips texts dynamically
         if hasattr(self, 'tip_help'):
@@ -2585,6 +3004,8 @@ class ZetaApp:
         self.tree.tag_configure("noresult", foreground="red" if self.theme == 'light' else "#ff6b6b")
         if hasattr(self, 'tree_bookmarks'):
             self.tree_bookmarks.tag_configure("noresult", foreground="red" if self.theme == 'light' else "#ff6b6b")
+        if hasattr(self, 'tree_space'):
+            self.tree_space.tag_configure("noresult", foreground="red" if self.theme == 'light' else "#ff6b6b")
             
         tag_colors = {
             'light': {
@@ -2611,6 +3032,12 @@ class ZetaApp:
             self.tree.tag_configure(f"tag_{col}", background=bg, foreground=fg)
             if hasattr(self, 'tree_bookmarks'):
                 self.tree_bookmarks.tag_configure(f"tag_{col}", background=bg, foreground=fg)
+            if hasattr(self, 'tree_space'):
+                self.tree_space.tag_configure(f"tag_{col}", background=bg, foreground=fg)
+
+        if hasattr(self, 'canvas_space'):
+            self._draw_category_chart()
+
 
     def _get_file_metadata(self, filepath):
         metadata = {}
