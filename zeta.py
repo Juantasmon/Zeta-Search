@@ -376,7 +376,40 @@ TRANSLATIONS = {
         'cat_media': 'Video / Audio',
         'cat_system': 'Ejecutables / Sistema',
         'cat_archive': 'Comprimidos',
-        'cat_others': 'Otros'
+        'cat_others': 'Otros',
+        'btn_ai_config': '⚙️ Configurar IA',
+        'title_ai_config': 'Configuración de IA',
+        'lbl_ai_provider': 'Proveedor:',
+        'lbl_ai_key': 'Clave API:',
+        'lbl_ai_model': 'Modelo:',
+        'lbl_ai_custom_url': 'URL Personalizada:',
+        'chk_ai_auto': 'Analizar automáticamente al seleccionar',
+        'btn_test_conn': 'Probar Conexión',
+        'btn_save': 'Guardar',
+        'status_testing': 'Probando conexión...',
+        'status_test_ok': '✅ ¡Conexión exitosa!',
+        'status_test_fail': '❌ Error de conexión: {error}',
+        'btn_analyze_ai': '🧠 Analizar con IA',
+        'lbl_format_info': 'Formato: {format}',
+        'lbl_ai_desc': 'Descripción IA:',
+        'ai_not_configured': 'IA no configurada. Haz clic en ⚙️ para configurarla.',
+        'ai_analyzing': 'Analizando archivo con IA...',
+        'ai_error': 'Error de IA: {error}',
+        'ai_safe_delete_yes': 'Es seguro eliminar.',
+        'ai_safe_delete_no': '⚠️ No se recomienda eliminar.',
+        'ai_safe_delete_maybe': '⚠️ Eliminar con precaución.',
+        'menu_send_trash': 'Mandar a papelera',
+        'menu_delete_permanently': 'Borrar total',
+        'title_confirm_delete': 'Confirmar Eliminación Permanente',
+        'msg_confirm_delete_warning': '⚠️ ATENCIÓN: Este archivo se eliminará de forma permanente e irreversible. No se enviará a la papelera y no se podrá recuperar.',
+        'btn_delete_permanently': 'Eliminar permanentemente',
+        'lbl_delete_name': 'Nombre:',
+        'lbl_delete_path': 'Ruta:',
+        'lbl_delete_size': 'Tamaño:',
+        'status_deleted_success': 'Archivo eliminado correctamente.',
+        'status_deleted_fail': 'Error al eliminar el archivo: {error}',
+        'status_trash_success': 'Archivo enviado a la papelera correctamente.',
+        'status_trash_fail': 'Error al enviar a la papelera: {error}'
     },
     'en': {
         'title': 'Zeta',
@@ -500,7 +533,40 @@ TRANSLATIONS = {
         'cat_media': 'Video / Audio',
         'cat_system': 'System / Executables',
         'cat_archive': 'Compressed',
-        'cat_others': 'Others'
+        'cat_others': 'Others',
+        'btn_ai_config': '⚙️ Setup AI',
+        'title_ai_config': 'AI Settings',
+        'lbl_ai_provider': 'Provider:',
+        'lbl_ai_key': 'API Key:',
+        'lbl_ai_model': 'Model:',
+        'lbl_ai_custom_url': 'Custom URL:',
+        'chk_ai_auto': 'Auto-analyze on selection',
+        'btn_test_conn': 'Test Connection',
+        'btn_save': 'Save',
+        'status_testing': 'Testing connection...',
+        'status_test_ok': '✅ Connection successful!',
+        'status_test_fail': '❌ Connection error: {error}',
+        'btn_analyze_ai': '🧠 Analyze with AI',
+        'lbl_format_info': 'Format: {format}',
+        'lbl_ai_desc': 'AI Description:',
+        'ai_not_configured': 'AI not configured. Click ⚙️ to configure.',
+        'ai_analyzing': 'Analyzing file with AI...',
+        'ai_error': 'AI Error: {error}',
+        'ai_safe_delete_yes': 'Safe to delete.',
+        'ai_safe_delete_no': '⚠️ Not recommended to delete.',
+        'ai_safe_delete_maybe': '⚠️ Delete with caution.',
+        'menu_send_trash': 'Send to recycle bin',
+        'menu_delete_permanently': 'Permanent delete',
+        'title_confirm_delete': 'Confirm Permanent Deletion',
+        'msg_confirm_delete_warning': '⚠️ WARNING: This file will be deleted permanently and irreversibly. It will not be sent to the recycle bin and cannot be recovered.',
+        'btn_delete_permanently': 'Delete permanently',
+        'lbl_delete_name': 'Name:',
+        'lbl_delete_path': 'Path:',
+        'lbl_delete_size': 'Size:',
+        'status_deleted_success': 'File deleted successfully.',
+        'status_deleted_fail': 'Error deleting file: {error}',
+        'status_trash_success': 'File sent to recycle bin successfully.',
+        'status_trash_fail': 'Error sending to recycle bin: {error}'
     }
 }
 
@@ -1340,7 +1406,7 @@ class ZetaApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Zeta")
-        self.root.geometry("1100x650")
+        self.root.geometry("1100x720")
         self.root.minsize(900, 500)
 
         if sys.platform == "win32":
@@ -1623,7 +1689,7 @@ class ZetaApp:
         self.frame_categories = ttk.LabelFrame(space_paned, text="Desglose por Categorías", padding=5)
         space_paned.add(self.frame_categories, weight=1)
 
-        self.canvas_space = tk.Canvas(self.frame_categories, height=120, highlightthickness=0)
+        self.canvas_space = tk.Canvas(self.frame_categories, height=95, highlightthickness=0)
         self.canvas_space.pack(fill=tk.BOTH, expand=True)
         self.canvas_space.bind("<Configure>", lambda e: self._draw_category_chart())
 
@@ -1663,6 +1729,31 @@ class ZetaApp:
         self.lbl_nav.pack(side=tk.LEFT, expand=True)
         self.btn_next = ttk.Button(nav, text="Siguiente >", command=self._next, state=tk.DISABLED)
         self.btn_next.pack(side=tk.RIGHT, padx=4)
+        # --- Tarjeta de Explicación de Formato / IA ---
+        self.frame_ai_card = tk.Frame(self.frame_preview)
+        self.frame_ai_card.pack(fill=tk.X, pady=(0,5))
+        
+        self.card_inner = tk.Frame(self.frame_ai_card, bd=1, relief=tk.SOLID)
+        self.card_inner.pack(fill=tk.X, expand=True, padx=2, pady=2)
+        
+        self.card_line1 = tk.Frame(self.card_inner)
+        self.card_line1.pack(fill=tk.X, padx=5, pady=3)
+        self.card_line1.columnconfigure(0, weight=1)
+        
+        self.lbl_card_format = tk.Label(self.card_line1, text="Formato: ...", font=("Segoe UI", 9, "bold"), anchor=tk.W)
+        self.lbl_card_format.grid(row=0, column=0, sticky="ew")
+        
+        self.btn_card_config = ttk.Button(self.card_line1, text="⚙️", width=3, command=self._show_ai_settings_dialog)
+        self.btn_card_config.grid(row=0, column=2, padx=2)
+        
+        self.btn_card_action = ttk.Button(self.card_line1, text="🧠 Analizar con IA", command=self._trigger_ai_analysis)
+        self.btn_card_action.grid(row=0, column=1, padx=2)
+        
+        self.txt_card_desc = tk.Text(self.card_inner, wrap=tk.WORD, height=6, font=("Segoe UI", 9), relief=tk.FLAT, bd=0, highlightthickness=0)
+        self.txt_card_desc.pack(fill=tk.X, padx=5, pady=(2,5))
+        
+        self.lbl_card_safety = tk.Label(self.card_inner, text="", font=("Segoe UI", 9, "bold"), fg="white", anchor=tk.CENTER, height=1)
+
         self.txt = tk.Text(self.frame_preview, wrap=tk.WORD, state=tk.DISABLED, font=("Consolas",10), width=40)
         sb_txt = ttk.Scrollbar(self.frame_preview, orient=tk.VERTICAL, command=self.txt.yview)
         self.txt.configure(yscrollcommand=sb_txt.set)
@@ -1681,6 +1772,7 @@ class ZetaApp:
         self.tree_bookmarks.bind("<Button-3>", self._ctx_menu)
 
         self.cm = tk.Menu(self.root, tearoff=0)
+        self.cm_space = tk.Menu(self.root, tearoff=0)
 
         self._apply_theme()
         self._update_language()
@@ -1749,7 +1841,7 @@ class ZetaApp:
             while True:
                 kind, data = self.q.get_nowait()
                 if not self.is_searching and not self.is_analyzing_space:
-                    if kind not in ("preview_raw", "preview_hl", "preview_image"):
+                    if kind not in ("preview_raw", "preview_hl", "preview_image", "preview_ai_update", "ai_result"):
                         continue
                 if kind == "match":
                     score, path = data
@@ -1792,6 +1884,10 @@ class ZetaApp:
                     self._show_highlight(data)
                 elif kind == "preview_image":
                     self._show_image(data)
+                elif kind == "preview_ai_update":
+                    self._handle_preview_ai_update(data)
+                elif kind == "ai_result":
+                    self._handle_ai_result(data)
         except queue.Empty:
             pass
         self.root.after(80, self._poll_queue)
@@ -2123,7 +2219,7 @@ class ZetaApp:
             # 2-column layout: col 0 for first 3, col 1 for remaining 3
             col = 0 if idx < 3 else 1
             row = idx if idx < 3 else idx - 3
-            row_y = row * 36 + 6
+            row_y = row * 28 + 8
             
             col_width = (w - 30) / 2
             if col == 0:
@@ -2134,21 +2230,21 @@ class ZetaApp:
                 x2 = w - 10
             
             cat_label = t.get('cat_' + cat, cat.capitalize())
-            self.canvas_space.create_text(x1, row_y + 4, text=cat_label, fill=text_color, font=("Segoe UI", 9, "bold"), anchor=tk.W)
+            self.canvas_space.create_text(x1, row_y + 3, text=cat_label, fill=text_color, font=("Segoe UI", 9, "bold"), anchor=tk.W)
             
             pct_str = f"{pct*100:.1f}%"
             size_str = _format_size(size)
             lbl_text = f"{size_str} ({pct_str})"
-            self.canvas_space.create_text(x2, row_y + 4, text=lbl_text, fill=text_color, font=("Segoe UI", 9), anchor=tk.E)
+            self.canvas_space.create_text(x2, row_y + 3, text=lbl_text, fill=text_color, font=("Segoe UI", 9), anchor=tk.E)
             
-            y1 = row_y + 13
-            y2 = row_y + 21
-            draw_rounded_rect(x1, y1, x2, y2, 4, track_color)
+            y1 = row_y + 11
+            y2 = row_y + 17
+            draw_rounded_rect(x1, y1, x2, y2, 3, track_color)
             
             fill_x2 = x1 + (x2 - x1) * pct
             if pct > 0:
                 fill_color = self.category_colors.get(cat, '#6b7280')
-                draw_rounded_rect(x1, y1, fill_x2, y2, 4, fill_color)
+                draw_rounded_rect(x1, y1, fill_x2, y2, 3, fill_color)
 
 
     # ── preview ───────────────────────────────────────────────────────────────
@@ -2229,6 +2325,13 @@ class ZetaApp:
 
     def _load_preview(self, path):
         t = TRANSLATIONS[self.language]
+        if os.path.isdir(path):
+            fmt_desc = t['type_folder']
+        else:
+            ext = os.path.splitext(path)[1]
+            fmt_desc = self._lookup_extension_format(ext)
+        self.q.put(("preview_ai_update", {"filepath": path, "format": fmt_desc}))
+        
         try:
             if os.path.isdir(path):
                 items = os.listdir(path)
@@ -2319,21 +2422,35 @@ class ZetaApp:
             active_tab = self.notebook.index(self.notebook.select())
         except Exception:
             active_tab = 0
-        tree = self.tree if active_tab == 0 else self.tree_bookmarks
+        if active_tab == 0:
+            tree = self.tree
+        elif active_tab == 1:
+            tree = self.tree_bookmarks
+        else:
+            tree = self.tree_space
         row = tree.identify_row(e.y)
         if row:
             tree.selection_set(row)
             path = self._get_sel_path()
             if path:
-                self._rebuild_ctx_menu(path)
-                self.cm.tk_popup(e.x_root, e.y_root)
+                if active_tab == 2:
+                    self._rebuild_space_ctx_menu(path)
+                    self.cm_space.tk_popup(e.x_root, e.y_root)
+                else:
+                    self._rebuild_ctx_menu(path)
+                    self.cm.tk_popup(e.x_root, e.y_root)
 
     def _on_double_click(self, event):
         try:
             active_tab = self.notebook.index(self.notebook.select())
         except Exception:
             active_tab = 0
-        tree = self.tree if active_tab == 0 else self.tree_bookmarks
+        if active_tab == 0:
+            tree = self.tree
+        elif active_tab == 1:
+            tree = self.tree_bookmarks
+        else:
+            tree = self.tree_space
         region = tree.identify_region(event.x, event.y)
         if region != "cell" and region != "tree":
             return
@@ -2344,6 +2461,140 @@ class ZetaApp:
         if item and "noresult" in item.get("tags", ()):
             return
         self._open()
+
+    def _rebuild_space_ctx_menu(self, path):
+        t = TRANSLATIONS[self.language]
+        self.cm_space.delete(0, tk.END)
+        self.cm_space.add_command(label=t['menu_open'], command=self._open)
+        self.cm_space.add_command(label=t['menu_open_loc'], command=self._open_loc)
+        self.cm_space.add_command(label=t['menu_copy_path'], command=self._copy_path)
+        self.cm_space.add_separator()
+        self.cm_space.add_command(label=t['menu_send_trash'], command=lambda: self._trash_file_prompt(path))
+        self.cm_space.add_command(label=t['menu_delete_permanently'], command=lambda: self._delete_permanently_prompt(path))
+
+    def _send_to_recycle_bin(self, path):
+        if not os.path.exists(path):
+            return False
+        import struct
+        import ctypes
+        from ctypes import wintypes
+        is_64bit = (struct.calcsize("P") == 8)
+        class SHFILEOPSTRUCTW(ctypes.Structure):
+            _pack_ = 8 if is_64bit else 1
+            _fields_ = [
+                ("hwnd", wintypes.HWND),
+                ("wFunc", wintypes.UINT),
+                ("pFrom", wintypes.LPCWSTR),
+                ("pTo", wintypes.LPCWSTR),
+                ("fFlags", wintypes.WORD),
+                ("fAnyOperationsAborted", wintypes.BOOL),
+                ("hNameMappings", wintypes.LPVOID),
+                ("lpszProgressTitle", wintypes.LPCWSTR),
+            ]
+        p_from = os.path.abspath(path) + "\0\0"
+        fileop = SHFILEOPSTRUCTW()
+        fileop.hwnd = None
+        fileop.wFunc = 3 # FO_DELETE
+        fileop.pFrom = p_from
+        fileop.pTo = None
+        fileop.fFlags = 0x40 | 0x0010 | 0x0004 | 0x0400 # FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI
+        fileop.fAnyOperationsAborted = False
+        fileop.hNameMappings = None
+        fileop.lpszProgressTitle = None
+        res = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(fileop))
+        return res == 0 and not fileop.fAnyOperationsAborted
+
+    def _trash_file_prompt(self, path):
+        t = TRANSLATIONS[self.language]
+        try:
+            success = self._send_to_recycle_bin(path)
+            if success:
+                sel = self.tree_space.selection()
+                if sel:
+                    self.tree_space.delete(sel[0])
+                self.lbl_space_status.config(text=t['status_trash_success'], foreground="#22c55e")
+            else:
+                self.lbl_space_status.config(text=t['status_trash_fail'].format(error="Unknown error"), foreground="#ef4444")
+        except Exception as e:
+            self.lbl_space_status.config(text=t['status_trash_fail'].format(error=str(e)), foreground="#ef4444")
+
+    def _delete_permanently_prompt(self, path):
+        if not os.path.exists(path):
+            return
+        t = TRANSLATIONS[self.language]
+        top = tk.Toplevel(self.root)
+        top.title(t['title_confirm_delete'])
+        top.transient(self.root)
+        top.grab_set()
+        w = 500
+        h = 320
+        top.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - w) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - h) // 2
+        top.geometry(f"{w}x{h}+{x}+{y}")
+        top.resizable(False, False)
+        
+        # Set program icon
+        base = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+        ico = os.path.join(base, "buscador.ico")
+        if os.path.exists(ico):
+            try:
+                top.iconbitmap(ico)
+            except Exception:
+                pass
+        bg_color = "#f3f4f6" if self.theme == "light" else "#1f2937"
+        top.config(bg=bg_color)
+        set_dark_titlebar(top, self.theme == 'dark')
+        main_frame = ttk.Frame(top, padding=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        lbl_warning_title = tk.Label(main_frame, text="⚠️ " + t['title_confirm_delete'], font=("Segoe UI", 12, "bold"), fg="#ef4444", bg=bg_color)
+        lbl_warning_title.pack(anchor=tk.W, pady=(0, 10))
+        details_frame = ttk.LabelFrame(main_frame, text=t['lbl_options'], padding=10)
+        details_frame.pack(fill=tk.X, expand=True, pady=5)
+        lbl_name_tag = ttk.Label(details_frame, text=t['lbl_delete_name'], font=("Segoe UI", 9, "bold"))
+        lbl_name_tag.grid(row=0, column=0, sticky=tk.W, pady=2)
+        lbl_name_val = tk.Label(details_frame, text=os.path.basename(path), font=("Segoe UI", 9, "bold"), fg="#ef4444", bg=bg_color if self.theme=="light" else "#2d3748", anchor=tk.W)
+        lbl_name_val.grid(row=0, column=1, sticky=tk.W, pady=2, padx=5)
+        lbl_path_tag = ttk.Label(details_frame, text=t['lbl_delete_path'], font=("Segoe UI", 9, "bold"))
+        lbl_path_tag.grid(row=1, column=0, sticky=tk.W, pady=2)
+        ent_path_val = ttk.Entry(details_frame, font=("Segoe UI", 8), width=45)
+        ent_path_val.insert(0, path)
+        ent_path_val.config(state="readonly")
+        ent_path_val.grid(row=1, column=1, sticky=tk.W, pady=2, padx=5)
+        try:
+            sz = os.path.getsize(path)
+            sz_str = _format_size(sz)
+        except Exception:
+            sz_str = "Unknown"
+        lbl_size_tag = ttk.Label(details_frame, text=t['lbl_delete_size'], font=("Segoe UI", 9, "bold"))
+        lbl_size_tag.grid(row=2, column=0, sticky=tk.W, pady=2)
+        lbl_size_val = ttk.Label(details_frame, text=sz_str)
+        lbl_size_val.grid(row=2, column=1, sticky=tk.W, pady=2, padx=5)
+        lbl_warning_desc = tk.Label(main_frame, text=t['msg_confirm_delete_warning'], font=("Segoe UI", 9, "bold"), fg="#f59e0b" if self.theme=="light" else "#fbbf24", bg=bg_color, wraplength=450, justify=tk.LEFT)
+        lbl_warning_desc.pack(anchor=tk.W, pady=10)
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=5)
+        style_del_name = "Danger.TButton"
+        self.style.configure(style_del_name, background="#ef4444", foreground="white", font=("Segoe UI", 9, "bold"))
+        self.style.map(style_del_name, background=[('active', '#dc2626')])
+        def confirm_delete():
+            try:
+                if os.path.isdir(path):
+                    import shutil
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
+                sel = self.tree_space.selection()
+                if sel:
+                    self.tree_space.delete(sel[0])
+                self.lbl_space_status.config(text=t['status_deleted_success'], foreground="#22c55e")
+                top.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", t['status_deleted_fail'].format(error=str(e)), parent=top)
+        btn_cancel = ttk.Button(btn_frame, text=t['btn_cancel'], command=top.destroy)
+        btn_cancel.pack(side=tk.RIGHT, padx=5)
+        btn_delete = ttk.Button(btn_frame, text=t['btn_delete_permanently'], style=style_del_name, command=confirm_delete)
+        btn_delete.pack(side=tk.RIGHT, padx=5)
 
     def _get_display_name(self, path):
         basename = os.path.basename(path)
@@ -2598,6 +2849,11 @@ class ZetaApp:
         self.search_history = []
         self.sound = True
         self.bookmarks = {}
+        self.ai_provider = "Gemini"
+        self.ai_key = ""
+        self.ai_model = "gemini-2.5-flash"
+        self.ai_custom_url = ""
+        self.ai_auto_analyze = False
         try:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r', encoding='utf-8') as f:
@@ -2613,6 +2869,11 @@ class ZetaApp:
                     self.search_history = cfg.get('search_history', [])
                     self.sound = cfg.get('sound', True)
                     self.bookmarks = cfg.get('bookmarks', {})
+                    self.ai_provider = cfg.get('ai_provider', 'Gemini')
+                    self.ai_key = cfg.get('ai_key', '')
+                    self.ai_model = cfg.get('ai_model', 'gemini-2.5-flash')
+                    self.ai_custom_url = cfg.get('ai_custom_url', '')
+                    self.ai_auto_analyze = cfg.get('ai_auto_analyze', False)
         except Exception:
             pass
 
@@ -2633,10 +2894,668 @@ class ZetaApp:
                     'custom_ignore': "",
                     'search_history': self.search_history,
                     'sound': self.var_sound.get() if hasattr(self, 'var_sound') else self.sound,
-                    'bookmarks': self.bookmarks
+                    'bookmarks': self.bookmarks,
+                    'ai_provider': self.ai_provider,
+                    'ai_key': self.ai_key,
+                    'ai_model': self.ai_model,
+                    'ai_custom_url': self.ai_custom_url,
+                    'ai_auto_analyze': self.ai_auto_analyze
                 }, f, ensure_ascii=False, indent=4)
         except Exception:
             pass
+
+    def _update_preview_card_layout(self):
+        # Recargar vista previa del archivo seleccionado para actualizar la UI con IA
+        path = self._get_sel_path()
+        if path and os.path.exists(path):
+            self._on_select(None)
+
+    def _test_ai_connection(self, provider, key, model, custom_url):
+        import urllib.request
+        import json
+        
+        prompt = "Respond exactly with OK"
+        
+        if provider == "Gemini":
+            if not key:
+                return "API key is empty"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}]
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            }
+        elif provider == "OpenAI":
+            if not key:
+                return "API key is empty"
+            url = "https://api.openai.com/v1/chat/completions"
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {key}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            }
+        else: # Personalizado
+            url = custom_url
+            if not url:
+                return "Custom URL is empty"
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            }
+            if key:
+                headers["Authorization"] = f"Bearer {key}"
+                
+        req_data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(url, data=req_data, headers=headers, method='POST')
+        
+        try:
+            with urllib.request.urlopen(req, timeout=10) as res:
+                res_data = res.read()
+                parsed = json.loads(res_data.decode('utf-8'))
+                if provider == "Gemini":
+                    text = parsed['candidates'][0]['content']['parts'][0]['text']
+                else: # OpenAI or Custom
+                    text = parsed['choices'][0]['message']['content']
+                return None # Exitoso
+        except Exception as e:
+            try:
+                if hasattr(e, 'read'):
+                    err_body = e.read().decode('utf-8')
+                    try:
+                        err_json = json.loads(err_body)
+                        if 'error' in err_json:
+                            if isinstance(err_json['error'], dict) and 'message' in err_json['error']:
+                                return err_json['error']['message']
+                            return err_json['error']
+                    except:
+                        pass
+                    return f"{e} ({err_body[:100]})"
+            except:
+                pass
+            return str(e)
+
+    def _show_ai_settings_dialog(self):
+        t = TRANSLATIONS[self.language]
+        
+        top = tk.Toplevel(self.root)
+        top.title(t['title_ai_config'])
+        top.transient(self.root)
+        top.grab_set()
+        
+        w = 460
+        h = 390
+        top.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - w) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - h) // 2
+        top.geometry(f"{w}x{h}+{x}+{y}")
+        top.resizable(False, False)
+        
+        # Set program icon
+        base = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+        ico = os.path.join(base, "buscador.ico")
+        if os.path.exists(ico):
+            try:
+                top.iconbitmap(ico)
+            except Exception:
+                pass
+        
+        # Sintonizar fondo y borde oscuro si corresponde
+        bg_color = "#f3f4f6" if self.theme == "light" else "#1f2937"
+        top.config(bg=bg_color)
+        set_dark_titlebar(top, self.theme == 'dark')
+        
+        var_provider = tk.StringVar(value=self.ai_provider)
+        var_key = tk.StringVar(value=self.ai_key)
+        var_model = tk.StringVar(value=self.ai_model)
+        var_custom_url = tk.StringVar(value=self.ai_custom_url)
+        var_auto = tk.BooleanVar(value=self.ai_auto_analyze)
+        
+        main_frame = ttk.Frame(top, padding=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Proveedor
+        ttk.Label(main_frame, text=t['lbl_ai_provider'], font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky=tk.W, pady=8)
+        cb_provider = ttk.Combobox(main_frame, textvariable=var_provider, values=["Gemini", "OpenAI", "Personalizado"], state="readonly", width=30)
+        cb_provider.grid(row=0, column=1, sticky=tk.W, pady=8)
+        
+        # Clave API
+        ttk.Label(main_frame, text=t['lbl_ai_key'], font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky=tk.W, pady=8)
+        key_frame = ttk.Frame(main_frame)
+        key_frame.grid(row=1, column=1, sticky=tk.W, pady=8)
+        
+        ent_key = ttk.Entry(key_frame, textvariable=var_key, show="*", width=25)
+        ent_key.pack(side=tk.LEFT)
+        
+        def toggle_key_visibility():
+            if ent_key.cget("show") == "*":
+                ent_key.config(show="")
+                btn_show.config(text="🙈")
+            else:
+                ent_key.config(show="*")
+                btn_show.config(text="👁️")
+                
+        btn_show = ttk.Button(key_frame, text="👁️", width=3, command=toggle_key_visibility)
+        btn_show.pack(side=tk.LEFT, padx=5)
+        
+        # Modelo
+        ttk.Label(main_frame, text=t['lbl_ai_model'], font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky=tk.W, pady=8)
+        cb_model = ttk.Combobox(main_frame, textvariable=var_model, width=30)
+        cb_model.grid(row=2, column=1, sticky=tk.W, pady=8)
+        
+        # URL Personalizada
+        lbl_url = ttk.Label(main_frame, text=t['lbl_ai_custom_url'], font=("Segoe UI", 9, "bold"))
+        lbl_url.grid(row=3, column=0, sticky=tk.W, pady=8)
+        ent_url = ttk.Entry(main_frame, textvariable=var_custom_url, width=33)
+        ent_url.grid(row=3, column=1, sticky=tk.W, pady=8)
+        
+        # Auto analizar checkbox
+        chk_auto = ttk.Checkbutton(main_frame, text=t['chk_ai_auto'], variable=var_auto)
+        chk_auto.grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=10)
+        
+        # Etiqueta de estado para conexión
+        lbl_status = ttk.Label(main_frame, text="", font=("Segoe UI", 9, "italic"), wraplength=400)
+        lbl_status.grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=5)
+        
+        # Lógica de presets
+        def update_presets(event=None):
+            prov = var_provider.get()
+            if prov == "Gemini":
+                cb_model.config(values=["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-3-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"], state="normal")
+                if var_model.get() not in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-3-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]:
+                    var_model.set("gemini-2.5-flash")
+                ent_url.config(state="disabled")
+            elif prov == "OpenAI":
+                cb_model.config(values=["gpt-4o-mini", "gpt-4o", "o1-mini"], state="normal")
+                if var_model.get() not in ["gpt-4o-mini", "gpt-4o", "o1-mini"]:
+                    var_model.set("gpt-4o-mini")
+                ent_url.config(state="disabled")
+            else: # Personalizado
+                cb_model.config(values=[], state="normal")
+                var_model.set("") # Clear text field so stale Gemini/OpenAI name doesn't persist
+                ent_url.config(state="normal")
+                
+        cb_provider.bind("<<ComboboxSelected>>", update_presets)
+        update_presets()
+        
+        # Botones
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.grid(row=6, column=0, columnspan=2, pady=15, sticky=tk.EW)
+        
+        def run_test():
+            lbl_status.config(text=t['status_testing'], foreground="")
+            top.update_idletasks()
+            
+            provider = var_provider.get()
+            key = var_key.get()
+            model = var_model.get()
+            custom_url = var_custom_url.get()
+            
+            def test_thread():
+                try:
+                    err = self._test_ai_connection(provider, key, model, custom_url)
+                    if err is None:
+                        top.after(0, lambda: lbl_status.config(text=t['status_test_ok'], foreground="green"))
+                    else:
+                        top.after(0, lambda: lbl_status.config(text=t['status_test_fail'].format(error=str(err)), foreground="red"))
+                except Exception as ex:
+                    top.after(0, lambda: lbl_status.config(text=t['status_test_fail'].format(error=str(ex)), foreground="red"))
+                    
+            threading.Thread(target=test_thread, daemon=True).start()
+            
+        btn_test = ttk.Button(btn_frame, text=t['btn_test_conn'], command=run_test)
+        btn_test.pack(side=tk.LEFT, padx=5)
+        
+        def save_and_close():
+            self.ai_provider = var_provider.get()
+            self.ai_key = var_key.get()
+            self.ai_model = var_model.get()
+            self.ai_custom_url = var_custom_url.get()
+            self.ai_auto_analyze = var_auto.get()
+            self._save_settings()
+            self._update_preview_card_layout()
+            top.destroy()
+            
+        btn_save = ttk.Button(btn_frame, text=t['btn_save'], command=save_and_close)
+        btn_save.pack(side=tk.RIGHT, padx=5)
+        
+        btn_cancel = ttk.Button(btn_frame, text=t['btn_close'], command=top.destroy)
+        btn_cancel.pack(side=tk.RIGHT, padx=5)
+
+    def _lookup_extension_format(self, ext):
+        if not ext:
+            return ""
+        ext_dot = ext.lower() if ext.startswith('.') else f".{ext.lower()}"
+        
+        offline_dict = {
+            # Documentos/Oficina
+            '.txt': {'es': 'Archivo de texto plano', 'en': 'Plain text file'},
+            '.rtf': {'es': 'Archivo de formato de texto enriquecido (RTF)', 'en': 'Rich Text Format (RTF) file'},
+            '.pdf': {'es': 'Documento de formato de documento portátil (PDF)', 'en': 'Portable Document Format (PDF) document'},
+            '.doc': {'es': 'Documento de Microsoft Word (Antiguo)', 'en': 'Microsoft Word document (Legacy)'},
+            '.docx': {'es': 'Documento de Microsoft Word', 'en': 'Microsoft Word document'},
+            '.xls': {'es': 'Hoja de cálculo de Microsoft Excel (Antiguo)', 'en': 'Microsoft Excel spreadsheet (Legacy)'},
+            '.xlsx': {'es': 'Hoja de cálculo de Microsoft Excel', 'en': 'Microsoft Excel spreadsheet'},
+            '.ppt': {'es': 'Presentación de Microsoft PowerPoint (Antiguo)', 'en': 'Microsoft PowerPoint presentation (Legacy)'},
+            '.pptx': {'es': 'Presentación de Microsoft PowerPoint', 'en': 'Microsoft PowerPoint presentation'},
+            '.odt': {'es': 'Documento de texto de OpenDocument', 'en': 'OpenDocument text document'},
+            '.ods': {'es': 'Hoja de cálculo de OpenDocument', 'en': 'OpenDocument spreadsheet'},
+            '.odp': {'es': 'Presentación de OpenDocument', 'en': 'OpenDocument presentation'},
+            '.pages': {'es': 'Documento de Apple Pages', 'en': 'Apple Pages document'},
+            '.numbers': {'es': 'Hoja de cálculo de Apple Numbers', 'en': 'Apple Numbers spreadsheet'},
+            '.key': {'es': 'Presentación de Apple Keynote', 'en': 'Apple Keynote presentation'},
+            '.csv': {'es': 'Archivo de valores separados por comas (CSV)', 'en': 'Comma-Separated Values (CSV) file'},
+            '.tsv': {'es': 'Archivo de valores separados por tabuladores (TSV)', 'en': 'Tab-Separated Values (TSV) file'},
+            '.epub': {'es': 'Publicación electrónica (Libro electrónico EPUB)', 'en': 'Electronic publication (EPUB e-book)'},
+            '.mobi': {'es': 'Libro electrónico Mobipocket', 'en': 'Mobipocket e-book'},
+            
+            # Programación/Datos
+            '.py': {'es': 'Script de Python', 'en': 'Python script'},
+            '.pyw': {'es': 'Script de Python (sin consola)', 'en': 'Python GUI script'},
+            '.pyc': {'es': 'Código binario compilado de Python', 'en': 'Compiled Python bytecode'},
+            '.ipynb': {'es': 'Cuaderno de Jupyter', 'en': 'Jupyter Notebook'},
+            '.js': {'es': 'Script de JavaScript', 'en': 'JavaScript script'},
+            '.jsx': {'es': 'Código de JavaScript con sintaxis XML (React)', 'en': 'JavaScript XML (React) code'},
+            '.ts': {'es': 'Script de TypeScript', 'en': 'TypeScript script'},
+            '.tsx': {'es': 'Código de TypeScript con sintaxis XML (React)', 'en': 'TypeScript XML (React) code'},
+            '.html': {'es': 'Página web HTML', 'en': 'HTML web page'},
+            '.htm': {'es': 'Página web HTML', 'en': 'HTML web page'},
+            '.css': {'es': 'Hoja de estilo en cascada (CSS)', 'en': 'Cascading Style Sheet (CSS)'},
+            '.scss': {'es': 'Hoja de estilo Sass (SCSS)', 'en': 'Sass Cascading Style Sheet (SCSS)'},
+            '.sass': {'es': 'Hoja de estilo Sass', 'en': 'Sass stylesheet'},
+            '.less': {'es': 'Hoja de estilo Less', 'en': 'Less stylesheet'},
+            '.json': {'es': 'Archivo de datos estructurados JSON', 'en': 'JSON structured data file'},
+            '.xml': {'es': 'Documento de lenguaje de marcado XML', 'en': 'XML markup document'},
+            '.yaml': {'es': 'Archivo de datos YAML', 'en': 'YAML data file'},
+            '.yml': {'es': 'Archivo de datos YAML', 'en': 'YAML data file'},
+            '.toml': {'es': 'Archivo de configuración TOML', 'en': 'TOML configuration file'},
+            '.ini': {'es': 'Archivo de configuración de inicialización (INI)', 'en': 'Initialization configuration (INI) file'},
+            '.cfg': {'es': 'Archivo de configuración', 'en': 'Configuration file'},
+            '.conf': {'es': 'Archivo de configuración', 'en': 'Configuration file'},
+            '.log': {'es': 'Archivo de registro de eventos', 'en': 'Log file'},
+            '.sql': {'es': 'Script de base de datos SQL', 'en': 'SQL database script'},
+            '.db': {'es': 'Archivo de base de datos', 'en': 'Database file'},
+            '.sqlite': {'es': 'Base de datos SQLite', 'en': 'SQLite database'},
+            '.sqlite3': {'es': 'Base de datos SQLite 3', 'en': 'SQLite 3 database'},
+            '.c': {'es': 'Código fuente de C', 'en': 'C source code'},
+            '.h': {'es': 'Archivo de cabecera de C/C++', 'en': 'C/C++ header file'},
+            '.cpp': {'es': 'Código fuente de C++', 'en': 'C++ source code'},
+            '.hpp': {'es': 'Archivo de cabecera de C++', 'en': 'C++ header file'},
+            '.cs': {'es': 'Código fuente de C#', 'en': 'C# source code'},
+            '.java': {'es': 'Código fuente de Java', 'en': 'Java source code'},
+            '.class': {'es': 'Código binario compilado de Java', 'en': 'Compiled Java bytecode'},
+            '.jar': {'es': 'Archivo empaquetado de Java', 'en': 'Java Archive (JAR) file'},
+            '.go': {'es': 'Código fuente de Go', 'en': 'Go source code'},
+            '.rs': {'es': 'Código fuente de Rust', 'en': 'Rust source code'},
+            '.php': {'es': 'Script de PHP', 'en': 'PHP script'},
+            '.rb': {'es': 'Script de Ruby', 'en': 'Ruby script'},
+            '.swift': {'es': 'Código fuente de Swift', 'en': 'Swift source code'},
+            '.kt': {'es': 'Código fuente de Kotlin', 'en': 'Kotlin source code'},
+            '.kts': {'es': 'Script de Kotlin', 'en': 'Kotlin script'},
+            '.sh': {'es': 'Script de shell de Unix/Linux', 'en': 'Unix/Linux shell script'},
+            '.bat': {'es': 'Archivo de comandos por lotes de Windows', 'en': 'Windows batch script'},
+            '.cmd': {'es': 'Archivo de comandos de Windows', 'en': 'Windows command script'},
+            '.ps1': {'es': 'Script de PowerShell', 'en': 'PowerShell script'},
+            '.vbs': {'es': 'Archivo de comandos VBScript', 'en': 'VBScript file'},
+            '.pl': {'es': 'Script de Perl', 'en': 'Perl script'},
+            '.r': {'es': 'Script de R', 'en': 'R script'},
+            '.dart': {'es': 'Código fuente de Dart', 'en': 'Dart source code'},
+            '.lua': {'es': 'Script de Lua', 'en': 'Lua script'},
+            '.makefile': {'es': 'Script de compilación Makefile', 'en': 'Makefile build script'},
+            '.mk': {'es': 'Fragmento de Makefile', 'en': 'Makefile fragment'},
+            '.dockerfile': {'es': 'Configuración de contenedor Docker', 'en': 'Docker container configuration'},
+            '.gitignore': {'es': 'Patrones de exclusión de Git', 'en': 'Git ignore patterns'},
+            '.gitattributes': {'es': 'Configuración de atributos de Git', 'en': 'Git attributes configuration'},
+            
+            # Imágenes/Diseño
+            '.png': {'es': 'Imagen PNG (Portable Network Graphics)', 'en': 'PNG (Portable Network Graphics) image'},
+            '.jpg': {'es': 'Imagen JPEG', 'en': 'JPEG image'},
+            '.jpeg': {'es': 'Imagen JPEG', 'en': 'JPEG image'},
+            '.gif': {'es': 'Imagen GIF (Graphic Interchange Format)', 'en': 'GIF (Graphic Interchange Format) image'},
+            '.bmp': {'es': 'Imagen de mapa de bits (BMP)', 'en': 'Bitmap (BMP) image'},
+            '.webp': {'es': 'Imagen WebP (formato web moderno)', 'en': 'WebP image (modern web format)'},
+            '.svg': {'es': 'Gráfico vectorial escalable (SVG)', 'en': 'Scalable Vector Graphics (SVG) image'},
+            '.ico': {'es': 'Icono de Windows', 'en': 'Windows icon'},
+            '.tiff': {'es': 'Imagen en formato TIFF', 'en': 'TIFF image'},
+            '.tif': {'es': 'Imagen en formato TIFF', 'en': 'TIFF image'},
+            '.psd': {'es': 'Documento de Adobe Photoshop', 'en': 'Adobe Photoshop document'},
+            '.ai': {'es': 'Documento de Adobe Illustrator', 'en': 'Adobe Illustrator document'},
+            '.xd': {'es': 'Archivo de diseño de Adobe XD', 'en': 'Adobe XD design file'},
+            '.fig': {'es': 'Archivo de diseño de Figma', 'en': 'Figma design file'},
+            '.heic': {'es': 'Contenedor de imagen de alta eficiencia (HEIC)', 'en': 'High Efficiency Image Container (HEIC)'},
+            '.raw': {'es': 'Imagen de cámara en formato RAW', 'en': 'RAW camera image'},
+            
+            # Audio
+            '.mp3': {'es': 'Archivo de audio MP3 (MPEG-1 Audio Layer III)', 'en': 'MP3 (MPEG-1 Audio Layer III) audio file'},
+            '.wav': {'es': 'Archivo de audio WAV sin comprimir', 'en': 'Uncompressed WAV audio file'},
+            '.ogg': {'es': 'Archivo de audio comprimido Ogg Vorbis', 'en': 'Ogg Vorbis compressed audio file'},
+            '.flac': {'es': 'Archivo de audio FLAC sin pérdida', 'en': 'FLAC lossless audio file'},
+            '.m4a': {'es': 'Archivo de audio M4A (MPEG-4)', 'en': 'M4A (MPEG-4) audio file'},
+            '.wma': {'es': 'Archivo de audio de Windows Media', 'en': 'Windows Media Audio file'},
+            '.aac': {'es': 'Archivo de audio AAC (Advanced Audio Coding)', 'en': 'Advanced Audio Coding (AAC) audio file'},
+            '.mid': {'es': 'Archivo de música MIDI', 'en': 'MIDI music file'},
+            '.midi': {'es': 'Archivo de música MIDI', 'en': 'MIDI music file'},
+            '.opus': {'es': 'Archivo de audio de alta compresión Opus', 'en': 'Opus highly compressed audio file'},
+            
+            # Video
+            '.mp4': {'es': 'Archivo de video MP4', 'en': 'MP4 video file'},
+            '.mkv': {'es': 'Contenedor de video Matroska (MKV)', 'en': 'Matroska (MKV) video container'},
+            '.avi': {'es': 'Archivo de video AVI (Audio Video Interleave)', 'en': 'AVI (Audio Video Interleave) video file'},
+            '.mov': {'es': 'Archivo de video QuickTime de Apple', 'en': 'Apple QuickTime video file'},
+            '.wmv': {'es': 'Archivo de video de Windows Media', 'en': 'Windows Media Video file'},
+            '.flv': {'es': 'Archivo de video Flash', 'en': 'Flash video file'},
+            '.webm': {'es': 'Archivo de video WebM (optimizado para web)', 'en': 'WebM video file (optimized for web)'},
+            '.mpeg': {'es': 'Archivo de video MPEG', 'en': 'MPEG video file'},
+            '.mpg': {'es': 'Archivo de video MPEG', 'en': 'MPEG video file'},
+            '.3gp': {'es': 'Archivo de video móvil 3GP', 'en': '3GP mobile video file'},
+            
+            # Compresión/Archivadores
+            '.zip': {'es': 'Archivo comprimido ZIP', 'en': 'ZIP compressed archive'},
+            '.rar': {'es': 'Archivo comprimido RAR', 'en': 'RAR compressed archive'},
+            '.7z': {'es': 'Archivo comprimido 7-Zip', 'en': '7-Zip compressed archive'},
+            '.tar': {'es': 'Archivo de cinta empaquetado (TAR)', 'en': 'Tape Archive (TAR) package'},
+            '.gz': {'es': 'Archivo comprimido Gzip', 'en': 'Gzip compressed file'},
+            '.tgz': {'es': 'Archivo comprimido tarball (TGZ)', 'en': 'Tarball (TGZ) compressed archive'},
+            '.bz2': {'es': 'Archivo comprimido Bzip2', 'en': 'Bzip2 compressed file'},
+            '.xz': {'es': 'Archivo comprimido XZ', 'en': 'XZ compressed file'},
+            '.cab': {'es': 'Archivo de gabinete de Windows', 'en': 'Windows Cabinet file'},
+            '.iso': {'es': 'Imagen de disco óptico ISO', 'en': 'ISO optical disk image'},
+            '.dmg': {'es': 'Imagen de disco de Apple DMG', 'en': 'Apple DMG disk image'},
+            '.pkg': {'es': 'Paquete de instalación de macOS', 'en': 'macOS installer package'},
+            
+            # Sistema/Binarios
+            '.exe': {'es': 'Aplicación ejecutable de Windows', 'en': 'Windows executable application'},
+            '.dll': {'es': 'Librería de enlace dinámico (DLL)', 'en': 'Dynamic Link Library (DLL)'},
+            '.sys': {'es': 'Archivo de controlador del sistema de Windows', 'en': 'Windows system driver file'},
+            '.msi': {'es': 'Paquete de instalación de Windows Installer', 'en': 'Windows Installer package'},
+            '.lnk': {'es': 'Acceso directo de Windows', 'en': 'Windows shortcut'},
+            '.bin': {'es': 'Archivo binario de datos', 'en': 'Binary data file'},
+            '.dat': {'es': 'Archivo de datos generales', 'en': 'General data file'},
+            '.o': {'es': 'Archivo de objeto compilado', 'en': 'Compiled object file'},
+            '.obj': {'es': 'Archivo de objeto compilado (OBJ)', 'en': 'Compiled object file (OBJ)'},
+            '.tmp': {'es': 'Archivo temporal', 'en': 'Temporary file'},
+            '.bak': {'es': 'Archivo de copia de seguridad (Backup)', 'en': 'Backup file'},
+            '.scr': {'es': 'Protector de pantalla de Windows', 'en': 'Windows screen saver'},
+            '.cur': {'es': 'Archivo de cursor de Windows', 'en': 'Windows cursor file'},
+            '.ani': {'es': 'Cursor animado de Windows', 'en': 'Animated Windows cursor'},
+        }
+        
+        fallback_val = offline_dict.get(ext_dot)
+        if fallback_val:
+            return fallback_val.get(self.language, fallback_val['en'])
+        
+        return ext_dot.upper() + f" {TRANSLATIONS[self.language]['type_file']}"
+
+    def _query_ai(self, filepath):
+        import urllib.request
+        import json
+        import os
+        import re
+        
+        # 1. Recopilar metadatos
+        filename = os.path.basename(filepath)
+        try:
+            size_bytes = os.path.getsize(filepath)
+        except Exception:
+            size_bytes = 0
+            
+        if size_bytes < 1024:
+            size_str = f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            size_str = f"{size_bytes / 1024:.2f} KB"
+        else:
+            size_str = f"{size_bytes / (1024 * 1024):.2f} MB"
+            
+        ext = os.path.splitext(filepath)[1]
+        format_desc = self._lookup_extension_format(ext)
+        
+        metadata_str = ""
+        meta_dict = self._get_file_metadata(filepath)
+        if meta_dict:
+            metadata_str = "Metadatos extraídos:\n" if self.language == "es" else "Extracted Metadata:\n"
+            for k, v in meta_dict.items():
+                metadata_str += f"- {k}: {v}\n"
+                
+        # 2. Extraer snippet de contenido
+        content_snippet = ""
+        is_binary = False
+        
+        try:
+            with open(filepath, 'rb') as f:
+                raw_chunk = f.read(2048)
+                if b'\x00' in raw_chunk:
+                    is_binary = True
+                else:
+                    try:
+                        content_snippet = raw_chunk.decode('utf-8', errors='ignore')
+                    except:
+                        is_binary = True
+        except Exception:
+            is_binary = True
+            
+        if not is_binary and content_snippet:
+            snippet_header = "\nContenido inicial del archivo (primeros 2 KB):\n" if self.language == "es" else "\nInitial file content (first 2 KB):\n"
+            content_snippet_str = f"{snippet_header}```\n{content_snippet}\n```"
+        else:
+            content_snippet_str = "\n(Archivo binario, sin vista previa de contenido de texto)" if self.language == "es" else "\n(Binary file, no text content preview)"
+            
+        # 3. Construir prompt
+        if self.language == "es":
+            prompt = f"""Ruta del archivo: {filepath}
+Nombre del archivo: {filename}
+Tamaño: {size_str}
+Formato de extensión: {format_desc}
+{metadata_str}
+{content_snippet_str}
+
+Por favor, analiza este archivo y proporciona:
+1. Una descripción clara y concisa de qué trata este archivo en base a su nombre, metadatos y contenido.
+2. Si es seguro o recomendable eliminarlo para liberar espacio, justificando brevemente la respuesta.
+
+Al final de tu respuesta, debes incluir exactamente una de estas etiquetas en una línea nueva para clasificar la seguridad de eliminación:
+- [SAFE_DELETE: YES]
+- [SAFE_DELETE: NO]
+- [SAFE_DELETE: MAYBE]"""
+        else:
+            prompt = f"""File Path: {filepath}
+File Name: {filename}
+Size: {size_str}
+Extension Format: {format_desc}
+{metadata_str}
+{content_snippet_str}
+
+Please analyze this file and provide:
+1. A clear and concise description of what this file does based on its name, metadata, and content.
+2. Whether it is safe or recommended to delete it to free up space, briefly justifying your answer.
+
+At the very end of your response, you must include exactly one of these tags on a new line to classify deletion safety:
+- [SAFE_DELETE: YES]
+- [SAFE_DELETE: NO]
+- [SAFE_DELETE: MAYBE]"""
+
+        # 4. Realizar petición
+        provider = self.ai_provider
+        key = self.ai_key
+        model = self.ai_model
+        custom_url = self.ai_custom_url
+        
+        if provider == "Gemini":
+            if not key:
+                return False, "API key is empty" if self.language == 'en' else "La clave API está vacía", 'maybe'
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}]
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            }
+        elif provider == "OpenAI":
+            if not key:
+                return False, "API key is empty" if self.language == 'en' else "La clave API está vacía", 'maybe'
+            url = "https://api.openai.com/v1/chat/completions"
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {key}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            }
+        else: # Personalizado
+            url = custom_url
+            if not url:
+                return False, "Custom URL is empty" if self.language == 'en' else "La URL personalizada está vacía", 'maybe'
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            }
+            if key:
+                headers["Authorization"] = f"Bearer {key}"
+                
+        req_data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(url, data=req_data, headers=headers, method='POST')
+        
+        try:
+            with urllib.request.urlopen(req, timeout=15) as res:
+                res_data = res.read()
+                parsed = json.loads(res_data.decode('utf-8'))
+                if provider == "Gemini":
+                    text = parsed['candidates'][0]['content']['parts'][0]['text']
+                else: # OpenAI or Custom
+                    text = parsed['choices'][0]['message']['content']
+                    
+                # Parsear etiqueta de seguridad
+                safe_delete = 'maybe'
+                tag_match = re.search(r'\[SAFE_DELETE:\s*(YES|NO|MAYBE)\]', text, re.IGNORECASE)
+                if tag_match:
+                    tag_val = tag_match.group(1).upper()
+                    if tag_val == 'YES':
+                        safe_delete = 'yes'
+                    elif tag_val == 'NO':
+                        safe_delete = 'no'
+                    else:
+                        safe_delete = 'maybe'
+                    text = re.sub(r'\n*\[SAFE_DELETE:\s*(YES|NO|MAYBE)\]\n*', '', text, flags=re.IGNORECASE).strip()
+                    
+                return True, text, safe_delete
+        except Exception as e:
+            err_msg = str(e)
+            try:
+                if hasattr(e, 'read'):
+                    err_body = e.read().decode('utf-8')
+                    try:
+                        err_json = json.loads(err_body)
+                        if 'error' in err_json:
+                            if isinstance(err_json['error'], dict) and 'message' in err_json['error']:
+                                err_msg = err_json['error']['message']
+                            else:
+                                err_msg = str(err_json['error'])
+                    except:
+                        pass
+            except:
+                pass
+            return False, err_msg, 'maybe'
+
+    def _handle_preview_ai_update(self, data):
+        t = TRANSLATIONS[self.language]
+        filepath = data["filepath"]
+        fmt_desc = data["format"]
+        
+        self.ai_preview_filepath = filepath
+        self.lbl_card_format.config(text=t['lbl_format_info'].format(format=fmt_desc))
+        self.lbl_card_safety.pack_forget()
+        
+        if not self.ai_key:
+            self.txt_card_desc.config(state=tk.NORMAL)
+            self.txt_card_desc.delete("1.0", tk.END)
+            self.txt_card_desc.insert(tk.END, t['ai_not_configured'])
+            self.txt_card_desc.config(state=tk.DISABLED)
+            self.btn_card_action.grid_forget()
+        else:
+            self.btn_card_action.grid(row=0, column=1, padx=2)
+            self.btn_card_action.config(text=t['btn_analyze_ai'], command=self._trigger_ai_analysis, state=tk.NORMAL)
+            if self.ai_auto_analyze:
+                self.txt_card_desc.config(state=tk.NORMAL)
+                self.txt_card_desc.delete("1.0", tk.END)
+                self.txt_card_desc.insert(tk.END, t['ai_analyzing'])
+                self.txt_card_desc.config(state=tk.DISABLED)
+                self._trigger_ai_analysis()
+            else:
+                self.txt_card_desc.config(state=tk.NORMAL)
+                self.txt_card_desc.delete("1.0", tk.END)
+                self.txt_card_desc.insert(tk.END, t['lbl_ai_desc'])
+                self.txt_card_desc.config(state=tk.DISABLED)
+
+    def _trigger_ai_analysis(self):
+        t = TRANSLATIONS[self.language]
+        filepath = getattr(self, 'ai_preview_filepath', None)
+        if not filepath or not os.path.exists(filepath):
+            return
+            
+        self.txt_card_desc.config(state=tk.NORMAL)
+        self.txt_card_desc.delete("1.0", tk.END)
+        self.txt_card_desc.insert(tk.END, t['ai_analyzing'])
+        self.txt_card_desc.config(state=tk.DISABLED)
+        self.lbl_card_safety.pack_forget()
+        self.btn_card_action.config(state=tk.DISABLED)
+        
+        def run_query():
+            success, result_text, safety_val = self._query_ai(filepath)
+            if getattr(self, 'ai_preview_filepath', None) == filepath:
+                self.q.put(("ai_result", {
+                    "success": success,
+                    "text": result_text,
+                    "safety": safety_val,
+                    "filepath": filepath
+                }))
+                
+        threading.Thread(target=run_query, daemon=True).start()
+
+    def _handle_ai_result(self, data):
+        t = TRANSLATIONS[self.language]
+        self.btn_card_action.config(state=tk.NORMAL)
+        if getattr(self, 'ai_preview_filepath', None) != data["filepath"]:
+            return
+            
+        self.txt_card_desc.config(state=tk.NORMAL)
+        self.txt_card_desc.delete("1.0", tk.END)
+        
+        if not data["success"]:
+            self.txt_card_desc.insert(tk.END, t['ai_error'].format(error=data["text"]))
+            self.txt_card_desc.config(state=tk.DISABLED)
+            return
+            
+        self.txt_card_desc.insert(tk.END, data["text"])
+        self.txt_card_desc.config(state=tk.DISABLED)
+        
+        safety = data["safety"]
+        if safety == 'yes':
+            badge_text = t['ai_safe_delete_yes']
+            badge_bg = "#10b981"
+        elif safety == 'no':
+            badge_text = t['ai_safe_delete_no']
+            badge_bg = "#ef4444"
+        else:
+            badge_text = t['ai_safe_delete_maybe']
+            badge_bg = "#f59e0b"
+            
+        self.lbl_card_safety.config(text=badge_text, bg=badge_bg)
+        self.lbl_card_safety.pack(fill=tk.X, padx=5, pady=(0,5))
 
     def _load_theme_images(self):
         from PIL import Image, ImageOps, ImageTk
@@ -2923,6 +3842,23 @@ class ZetaApp:
         
         c = theme_colors[self.theme]
         
+        if hasattr(self, 'card_inner'):
+            card_bg = "#ffffff" if self.theme == "light" else "#111827"
+            self.frame_ai_card.config(bg=c['bg'])
+            self.card_inner.config(
+                bg=card_bg, 
+                highlightbackground=c['border'], 
+                highlightcolor=c['border'], 
+                highlightthickness=1, 
+                bd=0
+            )
+            self.card_line1.config(bg=card_bg)
+            self.lbl_card_format.config(bg=card_bg, fg=c['fg'])
+            self.txt_card_desc.config(bg=card_bg, fg=c['fg'], insertbackground=c['fg'])
+            if self.lbl_card_safety.winfo_ismapped():
+                # Keep color but refresh text in case of language change (managed separately but good to have)
+                pass
+
         self.root.config(bg=c['bg'])
         set_dark_titlebar(self.root, self.theme == 'dark')
         self.txt.config(
@@ -2935,6 +3871,7 @@ class ZetaApp:
         self.txt.tag_config("match", background=c['txt_match_bg'], foreground=c['txt_match_fg'])
         self.txt.tag_config("active", background=c['txt_match_active_bg'], foreground=c['txt_match_active_fg'])
         self.cm.config(bg=c['bg'], fg=c['fg'], activebackground=c['accent'], activeforeground=c['sel_fg'])
+        self.cm_space.config(bg=c['bg'], fg=c['fg'], activebackground=c['accent'], activeforeground=c['sel_fg'])
         
         self.style.configure('.', background=c['bg'], foreground=c['fg'])
         self.style.configure('TFrame', background=c['bg'])
